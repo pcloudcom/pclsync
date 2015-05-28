@@ -31,6 +31,16 @@
 
 #include <stdio.h>
 
+typedef struct _email_vis_params {
+  char** email;
+  size_t *length;
+} email_visitor_params;
+
+typedef struct _team_vis_params {
+  char** name;
+  size_t *length;
+} team_visitor_params;
+
 #define FOLDERID_ENTRY_SIZE 18
 #define INVALID_SHAREDID_RESULT 2025
 
@@ -293,3 +303,132 @@ int do_account_modifyshare(psync_shareid_t usrshrids[], uint32_t uperms[], int n
   
   return result;
 }
+
+int do_account_users(psync_userid_t iserids[], int nids, result_visitor vis, void *param) {
+  psync_socket *sock;
+  binresult *bres;
+  char *ids = NULL;
+  char *idsp = 0;
+  int k,i;
+  const binresult *users;
+  
+  ids = (char *) psync_malloc(nids*FOLDERID_ENTRY_SIZE);
+  idsp = ids;
+  for (i = 0; i < nids; ++i) {
+    k = sprintf(idsp, "%lld", (long long) iserids[i]);
+    if (unlikely(k <= 0 )) break;
+    idsp[k] = ',';
+    idsp = idsp + k + 1;
+  }
+  if (i > 0)
+    *(idsp - 1) = '\0';
+  
+  binparam params[] = {P_STR("auth", psync_my_auth), P_STR("userids", ids)};
+
+  sock = psync_apipool_get();
+  bres = send_command(sock, "account_users", params);
+  if (likely(bres))
+    psync_apipool_release(sock);
+  else {
+    psync_apipool_release_bad(sock);
+    debug(D_WARNING, "Send command returned in valid result.\n");
+    return -1;
+  }
+  
+  
+  users = psync_find_result(bres, "users", PARAM_ARRAY);
+  
+  if (!users->length){
+    psync_free(bres);
+    psync_free(ids);
+    debug(D_WARNING, "Account_users returned empty result!\n");
+    return -2;
+  } else {
+    for (i = 0; i < users->length; ++i)
+       vis(i, users->array[i], param);
+  }
+  
+  psync_free(bres);
+  psync_free(ids);
+  return 0;
+}
+
+static void copy_email(int i, const binresult *user, void *_this) {
+  const char *emailret = "";
+  email_visitor_params *params = (email_visitor_params *) _this;
+  emailret = psync_find_result(user, "email", PARAM_STR)->str;
+  *(params->length) = strlen(emailret);
+  *(params->email) = psync_strndup(emailret, *(params->length));
+}
+
+void get_ba_member_email(uint64_t userid, char** email /*OUT*/, size_t *length /*OUT*/) {
+  psync_userid_t userids[] = {userid};
+  email_visitor_params params = {email, length};
+
+  do_account_users(userids, 1, &copy_email, &params);
+}
+
+int do_account_teams(psync_userid_t teamids[], int nids, result_visitor vis, void *param) {
+  psync_socket *sock;
+  binresult *bres;
+  char *ids = NULL;
+  char *idsp = 0;
+  int k,i;
+  const binresult *users;
+  
+  ids = (char *) psync_malloc(nids*FOLDERID_ENTRY_SIZE);
+  idsp = ids;
+  for (i = 0; i < nids; ++i) {
+    k = sprintf(idsp, "%lld", (long long) teamids[i]);
+    if (unlikely(k <= 0 )) break;
+    idsp[k] = ',';
+    idsp = idsp + k + 1;
+  }
+  if (i > 0)
+    *(idsp - 1) = '\0';
+  
+  binparam params[] = {P_STR("auth", psync_my_auth), P_STR("teamids", ids)};
+
+  sock = psync_apipool_get();
+  bres = send_command(sock, "account_teams", params);
+  if (likely(bres))
+    psync_apipool_release(sock);
+  else {
+    psync_apipool_release_bad(sock);
+    debug(D_WARNING, "Send command returned in valid result.\n");
+    return -1;
+  }
+  
+  
+  users = psync_find_result(bres, "teams", PARAM_ARRAY);
+  
+  if (!users->length){
+    psync_free(bres);
+    psync_free(ids);
+    debug(D_WARNING, "Account_teams returned empty result!\n");
+    return -2;
+  } else {
+    for (i = 0; i < users->length; ++i)
+      vis(i, users->array[i], param);
+  } 
+  psync_free(bres);
+  psync_free(ids);
+  return 0;
+}
+
+static void copy_team(int i, const binresult *user, void *_this) {
+  const char *emailret = "";
+  team_visitor_params *params = (team_visitor_params *) _this;
+  emailret = psync_find_result(user, "name", PARAM_STR)->str;
+  *(params->length) = strlen(emailret);
+  *(params->name) = psync_strndup(emailret, *(params->length));
+}
+
+
+void get_ba_team_name(uint64_t teamid, char** name /*OUT*/, size_t *length /*OUT*/) {
+  psync_userid_t teamids[] = {teamid};
+  team_visitor_params params = {name, length};
+
+  do_account_teams(teamids, 1, &copy_team, &params);
+}
+
