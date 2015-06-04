@@ -974,7 +974,7 @@ external_status psync_status_folder(const char *path);
  *  The code is pointer where generated code is returned.
  *  The err is parameter where printable text of api error if any is returned. 
  *  
- *  The code you obtained that way have to be concatenated to "https://my.pcloud.com/#page=publink&code=" constant string to acquire the full link.
+ *  The code you obtained that way have to be concatenated to "https://my.pcloud.com/publink/show?code=" constant string to acquire the full link.
  * 
  * 
  * psync_folder_public_link() creates public link for a folder. Returns link id or negative error number. 
@@ -982,7 +982,7 @@ external_status psync_status_folder(const char *path);
  *  The code is pointer where generated code is returned.
  *  The err is parameter where printable text of api error if any is returned. 
  *  
- *  The code you obtained that way have to be concatenated to "https://my.pcloud.com/#page=publink&code=" constant string to acquire the full link.
+ *  The code you obtained that way have to be concatenated to "https://my.pcloud.com/publink/show?code=" constant string to acquire the full link.
  * 
  * psync_tree_public_link() creates public link for a tree. Tree is define by root folder and arrays of folders and file paths. Each entry in the arrays 
  *  describes a path to file or folder. Number of entries in the arrays is passed separately. The API constructs a virtual folder of this files and folders 
@@ -991,7 +991,7 @@ external_status psync_status_folder(const char *path);
  *  The code is pointer where generated code is returned.
  *  The err is parameter where printable text of api error if any is returned. 
  *  
- *  The code you obtained that way have to be concatenated to "https://my.pcloud.com/#page=publink&code=" constant string to acquire the full link.
+ *  The code you obtained that way have to be concatenated to "https://my.pcloud.com/publink/show?code=" constant string to acquire the full link.
  * 
  * psync_delete_link() Deletes a public link by linkid or returns negative number and upon API failure a string representation of the error.
  * 
@@ -999,6 +999,8 @@ external_status psync_status_folder(const char *path);
  *   Same structure used for listing public and upload links only comment and maxspace are set to 0 in public links list.
  * 
  * psync_upload_link() Creates upload link to given folder. Comment is mandatory parameter as it's the only information the user sees.  
+ *
+ *  The code you obtained that way have to be concatenated to "https://my.pcloud.com/#page=puplink&code=" constant string to acquire the full link.
  *
  * psync_delete_upload_link(uploadlinkid) Deletes a upload link by uploadlinkid or returns negative number and upon API failure a string representation of the error.
  *
