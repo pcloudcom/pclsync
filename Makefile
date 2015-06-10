@@ -13,7 +13,7 @@ LIB_A=psynclib.a
 project_path := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 ifeq ($(OS),Windows_NT)
-    CFLAGS += -DP_OS_WINDOWS
+    CFLAGS += -DP_OS_WINDOWS -I$(project_path)lib/sqlite/inst/include
     LIB_A=psynclib.dll
     AR=$(CC) -shared -o
     RANLIB=strip --strip-unneeded
