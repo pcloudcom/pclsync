@@ -1,2 +1,11 @@
 *.o
 *.a
+*.creator
+*.includes
+.kdev4
+*.kdev4
+/Debug
+*.config
+*.user
+*.files
+*~

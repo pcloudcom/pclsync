@@ -1,7 +1,8 @@
 CC=cc
 AR=ar rcu
 RANLIB=ranlib
-USESSL=openssl
+#USESSL=openssl
+USESSL=mbed
 
 #CFLAGS=-Wall -Wpointer-arith -O2 -g -fsanitize=address -mtune=core2
 CFLAGS=-Wall -Wpointer-arith -O2 -g -fno-stack-protector -fomit-frame-pointer -mtune=core2
@@ -23,7 +24,13 @@ else
             ifneq (,$(findstring Debian,$(UNAME_V)))
                 CFLAGS += -DP_OS_DEBIAN
             endif
-	LDFLAGS += -lssl -lcrypto -lfuse -lpthread -lsqlite3
+            LDFLAGS += -lfuse -lpthread -lsqlite3
+        ifeq ($(USESSL),openssl)
+            LDFLAGS += -lssl -lcrypto
+        endif
+        ifeq ($(USESSL),mbed)
+            LDFLAGS += -lmbedtls -L./lib/mbedtls/mbedtls/library
+endif
     endif
     ifeq ($(UNAME_S),Darwin)
         CFLAGS += -DP_OS_MACOSX -I/usr/local/ssl/include/
@@ -52,7 +59,7 @@ ifeq ($(USESSL),securetransport)
 endif
 ifeq ($(USESSL),mbed)
   OBJ += pssl-mbedtls.o
-  CFLAGS += -DP_SSL_MBEDTLS -I../../mbedtls-1.3.10/include/
+  CFLAGS += -DP_SSL_MBEDTLS -I./lib/mbedtls/include/
 endif
 
 all: $(LIB_A)
