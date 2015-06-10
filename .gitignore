@@ -1,5 +1,6 @@
 *.o
 *.a
+*.so
 *.creator
 *.includes
 .kdev4
@@ -9,3 +10,4 @@
 *.user
 *.files
 *~
+cli

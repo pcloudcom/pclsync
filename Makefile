@@ -10,6 +10,8 @@ CFLAGS=-Wall -Wpointer-arith -O2 -g -fno-stack-protector -fomit-frame-pointer -m
 
 LIB_A=psynclib.a
 
+project_path := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
 ifeq ($(OS),Windows_NT)
     CFLAGS += -DP_OS_WINDOWS
     LIB_A=psynclib.dll
@@ -20,16 +22,16 @@ else
     UNAME_S := $(shell uname -s)
     UNAME_V := $(shell uname -v)
     ifeq ($(UNAME_S),Linux)
-        CFLAGS += -DP_OS_LINUX
+        CFLAGS += -DP_OS_LINUX -I$(project_path)lib/sqlite/inst/include
             ifneq (,$(findstring Debian,$(UNAME_V)))
                 CFLAGS += -DP_OS_DEBIAN
             endif
-            LDFLAGS += -lfuse -lpthread -lsqlite3
+            LDFLAGS += -lfuse -lpthread -lsqlite3 -L$(project_path)lib/sqlite/inst/lib
         ifeq ($(USESSL),openssl)
             LDFLAGS += -lssl -lcrypto
         endif
         ifeq ($(USESSL),mbed)
-            LDFLAGS += -lmbedtls -L./lib/mbedtls/mbedtls/library
+            LDFLAGS += -lmbedtls -L$(project_path)lib/mbedtls/library
 endif
     endif
     ifeq ($(UNAME_S),Darwin)
@@ -59,7 +61,7 @@ ifeq ($(USESSL),securetransport)
 endif
 ifeq ($(USESSL),mbed)
   OBJ += pssl-mbedtls.o
-  CFLAGS += -DP_SSL_MBEDTLS -I./lib/mbedtls/include/
+  CFLAGS += -DP_SSL_MBEDTLS -I$(project_path)lib/mbedtls/include/
 endif
 
 all: $(LIB_A)
@@ -72,9 +74,24 @@ fs: $(OBJ) $(OBJFS)
 	$(AR) $(LIB_A) $(OBJ) $(OBJFS)
 	$(RANLIB) $(LIB_A)
 
-cli: fs
+fsall: fs libs
+
+cli: fsall
 	$(CC) $(CFLAGS) -o cli cli.c $(LIB_A) $(LDFLAGS)
 
 clean:
 	rm -f *~ *.o $(LIB_A)
 
+cleanall: clean
+	cd $(project_path)lib/mbedtls && $(MAKE) clean
+	cd $(project_path)lib/sqlite && $(MAKE) clean
+	rm -rf $(project_path)lib/sqlite/inst
+
+libs: mbedtls sqlite
+
+mbedtls: 
+	-cd $(project_path)lib/mbedtls && patch -N -p1 < ../../mbedtls-1.3.10.patch 
+	cd $(project_path)lib/mbedtls && $(MAKE)
+
+sqlite: 
+	cd $(project_path)lib/sqlite && CFLAGS="-Os" ./configure --prefix=$(project_path)lib/sqlite/inst && $(MAKE) && $(MAKE) install
