@@ -27,7 +27,6 @@
 
 #define FUSE_USE_VERSION 26
 #define _FILE_OFFSET_BITS 64
-
 #include <pthread.h>
 #include <fuse.h>
 #include <errno.h>
@@ -1448,7 +1447,7 @@ static int psync_fs_creat_fake_locked(psync_fspath_t *fpath, struct fuse_file_in
   return 0;
 }
 
-static int psync_fs_creat(const char *path, mode_t mode, struct fuse_file_info *fi){
+static int psync_fs_creat(const char *path, __mode_t mode, struct fuse_file_info *fi){
   psync_fspath_t *fpath;
   psync_fstask_folder_t *folder;
   psync_fstask_creat_t *cr;
@@ -2221,7 +2220,7 @@ retry:
   }
 }
 
-static int psync_fs_mkdir(const char *path, mode_t mode){
+static int psync_fs_mkdir(const char *path, __mode_t mode){
   psync_fspath_t *fpath;
   int ret;
   psync_fs_set_thread_name();
@@ -2637,7 +2636,7 @@ static int psync_fs_statfs(const char *path, struct statvfs *stbuf){
   return 0;
 }
 
-static int psync_fs_chmod(const char *path, mode_t mode){
+static int psync_fs_chmod(const char *path, __mode_t mode){
   psync_fs_set_thread_name();
   debug(D_NOTICE, "chmod %s %u", path, (unsigned)mode);
   return 0;

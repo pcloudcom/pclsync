@@ -1,8 +1,8 @@
-CC=cc
+CC=gcc
 AR=ar rcu
 RANLIB=ranlib
-#USESSL=openssl
-USESSL=mbed
+USESSL=openssl
+#USESSL=mbed
 
 #CFLAGS=-Wall -Wpointer-arith -O2 -g -fsanitize=address -mtune=core2
 CFLAGS=-Wall -Wpointer-arith -O2 -g -fno-stack-protector -fomit-frame-pointer -mtune=core2
@@ -13,9 +13,9 @@ LIB_A=psynclib.a
 project_path := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 ifeq ($(OS),Windows_NT)
-    CFLAGS += -DP_OS_WINDOWS -I$(project_path)lib/sqlite/inst/include
+    CFLAGS += -DP_OS_WINDOWS -I$(project_path)lib/sqlite -I$(project_path)lib/fuse2cbfs
     LIB_A=psynclib.dll
-    AR=$(CC) -shared -o
+    AR=$(CC) -shared  -lfuse2cbfs -L$(project_path)lib/fuse2cbfs/Debug/debug -lsqlite -L$(project_path)lib/sqlite/Debug/debug -lmbedtls -L$(project_path)lib/mbedtls/build/library  -o 
     RANLIB=strip --strip-unneeded
     LDFLAGS=-s
 else
@@ -64,7 +64,7 @@ ifeq ($(USESSL),mbed)
   CFLAGS += -DP_SSL_MBEDTLS -I$(project_path)lib/mbedtls/include/
 endif
 
-all: $(LIB_A)
+all: fs
 
 $(LIB_A): $(OBJ) $(OBJNOFS)
 	$(AR) $@ $(OBJ) $(OBJNOFS)
