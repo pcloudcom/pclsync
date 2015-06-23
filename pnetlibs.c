@@ -307,7 +307,7 @@ int psync_handle_api_result(uint64_t result){
     psync_timer_notify_exception();
     return PSYNC_NET_TEMPFAIL;
   }
-  else if (result==2003 || result==2009 || result==2005 || result==2029 || result==2067)
+  else if (result==2003 || result==2009 || result==2005 || result==2029 || result==2067 || result==5002)
     return PSYNC_NET_PERMFAIL;
   else if (result==2007){
     debug(D_ERROR, "trying to delete root folder");
@@ -2176,8 +2176,10 @@ static int download_file_revisions(psync_fileid_t fileid){
     psync_sql_run(hc);
   }
   hash=psync_find_result(meta, "hash", PARAM_NUM)->num;
+  psync_sql_bind_uint(fr, 1, fileid);
   psync_sql_bind_uint(fr, 2, hash);
   psync_sql_bind_uint(fr, 3, psync_find_result(meta, "modified", PARAM_NUM)->num);
+  psync_sql_bind_uint(fr, 4, psync_find_result(meta, "size", PARAM_NUM)->num);
   psync_sql_run_free(fr);
   psync_sql_bind_uint(hc, 1, hash);
   psync_sql_bind_uint(hc, 2, psync_find_result(meta, "size", PARAM_NUM)->num);
