@@ -64,7 +64,8 @@ SOURCES += \
     ../pcache.c \
     ../pbusinessaccount.c \
     ../papi.c \
-    ../cli.c
+    ../cli.c \
+    ../poverlay.c
 
 HEADERS += \
     ../pupload.h \
@@ -118,7 +119,8 @@ HEADERS += \
     ../pcallbacks.h \
     ../pcache.h \
     ../pbusinessaccount.h \
-    ../papi.h
+    ../papi.h \
+    ../poverlay.h
 unix:!symbian {
     maemo5 {
         target.path = /opt/usr/lib
