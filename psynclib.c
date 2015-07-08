@@ -308,8 +308,8 @@ void psync_set_user_pass(const char *username, const char *password, int save){
     psync_my_pass=psync_strdup(password);
     pthread_mutex_unlock(&psync_my_auth_mutex);
   }
-  psync_cache_contacts();
   psync_set_status(PSTATUS_TYPE_AUTH, PSTATUS_AUTH_PROVIDED);
+  psync_cache_contacts();
 }
 
 void psync_set_pass(const char *password, int save){
