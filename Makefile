@@ -1,8 +1,8 @@
 CC=gcc
 AR=ar rcu
 RANLIB=ranlib
-USESSL=openssl
-#USESSL=mbed
+#USESSL=openssl
+USESSL=mbed
 
 #CFLAGS=-Wall -Wpointer-arith -O2 -g -fsanitize=address -mtune=core2
 CFLAGS=-Wall -Wpointer-arith -O2 -g -fno-stack-protector -fomit-frame-pointer -mtune=core2
