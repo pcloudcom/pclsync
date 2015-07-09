@@ -183,7 +183,6 @@ int psync_init(){
   }
   psync_locked_init();
   psync_cache_init();
-  psync_timer_init();
   psync_compat_init();
   if (!psync_database){
     psync_database=psync_get_default_database_path();
@@ -198,6 +197,7 @@ int psync_init(){
       pthread_mutex_unlock(&psync_libstate_mutex);
     return_error(PERROR_DATABASE_OPEN);
   }
+  psync_timer_init();
   psync_sql_statement("UPDATE task SET inprogress=0 WHERE inprogress=1");
   if (unlikely_log(psync_ssl_init())){
     if (IS_DEBUG)
