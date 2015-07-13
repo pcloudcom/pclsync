@@ -15,12 +15,6 @@ void overlay_main_loop(VOID)
    BOOL   fConnected = FALSE;
    HANDLE hPipe = INVALID_HANDLE_VALUE;
 
-// The main loop creates an instance of the named pipe and
-// then waits for a client to connect to it. When the client
-// connects, a thread is created to handle communications
-// with that client, and this loop is free to wait for the
-// next client connect request. It is an infinite loop.
-
    for (;;)
    {
       debug(D_NOTICE, "\nPipe Server: Main thread awaiting client connection on %s\n", PORT);
@@ -42,10 +36,6 @@ void overlay_main_loop(VOID)
           return;
       }
 
-      // Wait for the client to connect; if it succeeds,
-      // the function returns a nonzero value. If the function
-      // returns zero, GetLastError returns ERROR_PIPE_CONNECTED.
-
       fConnected = ConnectNamedPipe(hPipe, NULL) ?
          TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
 
@@ -53,7 +43,6 @@ void overlay_main_loop(VOID)
       {
          debug(D_NOTICE, "Client connected, creating a processing thread.\n");
 
-         // Create a thread for this client.
          psync_run_thread1(
             "Pipe request handle routine",
             instance_thread,    // thread proc
@@ -61,7 +50,6 @@ void overlay_main_loop(VOID)
          );
        }
       else
-        // The client could not connect, so close the pipe.
          CloseHandle(hPipe);
    }
 
@@ -69,11 +57,6 @@ void overlay_main_loop(VOID)
 }
 
 void instance_thread(LPVOID lpvParam)
-// This routine is a thread processing function to read from and reply to a client
-// via the open pipe connection passed from the main loop. Note this allows
-// the main loop to continue executing, potentially creating more threads of
-// of this procedure to run concurrently, depending on the number of incoming
-// client connections.
 {
    HANDLE hHeap      = GetProcessHeap();
    TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE*sizeof(TCHAR));
@@ -83,14 +66,10 @@ void instance_thread(LPVOID lpvParam)
    BOOL fSuccess = FALSE;
    HANDLE hPipe  = NULL;
 
-   // Do some extra error checking since the app will keep running even if this
-   // thread fails.
 
    if (lpvParam == NULL)
    {
-       debug(D_NOTICE,  "\nERROR - Pipe Server Failure:\n");
-       debug(D_NOTICE,  "   InstanceThread got an unexpected NULL value in lpvParam.\n");
-       debug(D_NOTICE,  "   InstanceThread exitting.\n");
+       debug(D_ERROR,  "InstanceThread got an unexpected NULL value in lpvParam.\n");
        if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
        if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
        return (DWORD)-1;
@@ -98,34 +77,22 @@ void instance_thread(LPVOID lpvParam)
 
    if (pchRequest == NULL)
    {
-       debug(D_NOTICE,  "\nERROR - Pipe Server Failure:\n");
-       debug(D_NOTICE,  "   InstanceThread got an unexpected NULL heap allocation.\n");
-       debug(D_NOTICE,  "   InstanceThread exitting.\n");
+       debug(D_ERROR,  "   InstanceThread got an unexpected NULL heap allocation.\n");
        if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
        return (DWORD)-1;
    }
 
    if (pchReply == NULL)
    {
-       debug(D_NOTICE,  "\nERROR - Pipe Server Failure:\n");
-       debug(D_NOTICE,  "   InstanceThread got an unexpected NULL heap allocation.\n");
-       debug(D_NOTICE,  "   InstanceThread exitting.\n");
+       debug(D_ERROR,  "   InstanceThread got an unexpected NULL heap allocation.\n");
        if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
        return (DWORD)-1;
    }
 
-   // Print verbose messages. In production code, this should be for debugging only.
    debug(D_NOTICE, "InstanceThread created, receiving and processing messages.\n");
-
-// The thread's parameter is a handle to a pipe object instance.
-
    hPipe = (HANDLE) lpvParam;
-
-// Loop until done reading
    while (1)
    {
-   // Read client requests from the pipe. This simplistic code only allows messages
-   // up to BUFSIZE characters in length.
       fSuccess = ReadFile(
          hPipe,        // handle to pipe
          pchRequest,    // buffer to receive data
@@ -146,10 +113,8 @@ void instance_thread(LPVOID lpvParam)
           break;
       }
 
-   // Process the incoming message.
       get_answer_to_request(pchRequest, pchReply, &cbReplyBytes);
 
-   // Write the reply to the pipe.
       fSuccess = WriteFile(
          hPipe,        // handle to pipe
          pchReply,     // buffer to write from
@@ -163,17 +128,11 @@ void instance_thread(LPVOID lpvParam)
           break;
       }
   }
-
-// Flush the pipe to allow the client to read the pipe's contents
-// before disconnecting. Then disconnect the pipe, and close the
-// handle to this pipe instance.
-
-   FlushFileBuffers(hPipe);
-   DisconnectNamedPipe(hPipe);
-   CloseHandle(hPipe);
-
-   HeapFree(hHeap, 0, pchRequest);
-   HeapFree(hHeap, 0, pchReply);
+  FlushFileBuffers(hPipe);
+  DisconnectNamedPipe(hPipe);
+  CloseHandle(hPipe);
+  HeapFree(hHeap, 0, pchRequest);
+  HeapFree(hHeap, 0, pchReply);
 
    debug(D_NOTICE, "InstanceThread exitting.\n");
    return;
@@ -182,11 +141,6 @@ void instance_thread(LPVOID lpvParam)
 void get_answer_to_request( LPTSTR pchRequest,
                          LPTSTR pchReply,
                          LPDWORD pchBytes )
-// This routine is a simple function to print the client request to the console
-// and populate the reply buffer with a default data string. This is where you
-// would put the actual client request processing code that runs in the context
-// of an instance thread. Keep in mind the main thread will continue to wait for
-// and receive other client connections while the instance thread is working.
 {
     _tprintf( TEXT("Client Request String:\"%s\"\n"), pchRequest );
 
