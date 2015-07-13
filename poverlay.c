@@ -51,7 +51,7 @@ void overlay_main_loop(VOID)
 
       if (fConnected)
       {
-         printf("Client connected, creating a processing thread.\n");
+         debug(D_NOTICE, "Client connected, creating a processing thread.\n");
 
          // Create a thread for this client.
          psync_run_thread1(
@@ -115,7 +115,7 @@ void instance_thread(LPVOID lpvParam)
    }
 
    // Print verbose messages. In production code, this should be for debugging only.
-   printf("InstanceThread created, receiving and processing messages.\n");
+   debug(D_NOTICE, "InstanceThread created, receiving and processing messages.\n");
 
 // The thread's parameter is a handle to a pipe object instance.
 
