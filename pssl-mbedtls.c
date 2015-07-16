@@ -129,14 +129,14 @@ int psync_ssl_init(){
   if (pthread_mutex_init(&psync_mbed_rng.mutex, NULL))
     return PRINT_RETURN(-1);
   entropy_init(&psync_mbed_entropy);
+  psync_get_random_seed(seed, seed, sizeof(seed), 0);
+  entropy_update_manual(&psync_mbed_entropy, seed, sizeof(seed));
   if (ctr_drbg_init(&psync_mbed_rng.rnd, entropy_func, &psync_mbed_entropy, NULL, 0))
     return PRINT_RETURN(-1);
   x509_crt_init(&psync_mbed_trusted_certs_x509);
   for (i=0; i<ARRAY_SIZE(psync_ssl_trusted_certs); i++)
     if (x509_crt_parse(&psync_mbed_trusted_certs_x509, (const unsigned char *)psync_ssl_trusted_certs[i], strlen(psync_ssl_trusted_certs[i])))
       debug(D_ERROR, "failed to load certificate %lu", (unsigned long)i);
-  psync_get_random_seed(seed, NULL, 0, 0);
-  ctr_drbg_update(&psync_mbed_rng.rnd, seed, sizeof(seed));
   return 0;
 }
 
@@ -429,6 +429,7 @@ psync_binary_rsa_key_t psync_ssl_rsa_public_to_binary(psync_rsa_publickey_t rsa)
   pk_context ctx;
   psync_binary_rsa_key_t ret;
   int len;
+  pk_init(&ctx);
   if (pk_init_ctx(&ctx, pk_info_from_type(POLARSSL_PK_RSA)) || rsa_copy(pk_rsa(ctx), rsa))
     return PSYNC_INVALID_BIN_RSA;
   p=buff+sizeof(buff);
