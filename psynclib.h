@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
+#include "paccountevents.h"
 
 typedef uint64_t psync_folderid_t;
 typedef uint64_t psync_fileid_t;
@@ -349,7 +350,8 @@ typedef struct {
   unsigned char canmodify;
   unsigned char candelete;
   unsigned char canmanage;
-  size_t isba;
+  unsigned char isba;
+  unsigned char isteam;
 } psync_share_t;
 
 typedef struct {
@@ -1077,6 +1079,13 @@ pcontacts_list_t *psync_list_contacts();
 
 int psync_account_teamshare(psync_folderid_t folderid, const char *name, psync_teamid_t teamid, const char *message, uint32_t permissions, char **err);
 
+
+
+/* psync_register_account_events_callback Registers a callback to be notified upon invalidation of the account cache information. 
+ * Different notifications are:
+ * Links, team, team users emails, contacts or all.
+ */
+void psync_register_account_events_callback(paccount_cache_callback_t callback);
 
 #ifdef __cplusplus
 }

@@ -14,7 +14,6 @@ void overlay_main_loop(VOID)
 {
    BOOL   fConnected = FALSE;
    HANDLE hPipe = INVALID_HANDLE_VALUE;
-
    for (;;)
    {
       debug(D_NOTICE, "\nPipe Server: Main thread awaiting client connection on %s\n", PORT);
@@ -42,7 +41,6 @@ void overlay_main_loop(VOID)
       if (fConnected)
       {
          debug(D_NOTICE, "Client connected, creating a processing thread.\n");
-
          psync_run_thread1(
             "Pipe request handle routine",
             instance_thread,    // thread proc
@@ -65,7 +63,6 @@ void instance_thread(LPVOID lpvParam)
    DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0;
    BOOL fSuccess = FALSE;
    HANDLE hPipe  = NULL;
-
 
    if (lpvParam == NULL)
    {
@@ -112,9 +109,7 @@ void instance_thread(LPVOID lpvParam)
           }
           break;
       }
-
       get_answer_to_request(pchRequest, pchReply, &cbReplyBytes);
-
       fSuccess = WriteFile(
          hPipe,        // handle to pipe
          pchReply,     // buffer to write from
@@ -133,6 +128,7 @@ void instance_thread(LPVOID lpvParam)
   CloseHandle(hPipe);
   HeapFree(hHeap, 0, pchRequest);
   HeapFree(hHeap, 0, pchReply);
+
 
    debug(D_NOTICE, "InstanceThread exitting.\n");
    return;

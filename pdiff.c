@@ -62,8 +62,8 @@ typedef struct {
 typedef struct {
   uint64_t diffid;
   uint32_t notificationid;
-  uint32_t publinkid;
-  uint32_t uploadlinkid;
+  uint64_t publinkid;
+  uint64_t uploadlinkid;
 } subscribed_ids;
 
 static uint64_t used_quota=0, current_quota=0;
@@ -71,6 +71,22 @@ static psync_uint_t needdownload=0;
 static psync_socket_t exceptionsockwrite=INVALID_SOCKET;
 static pthread_mutex_t diff_mutex=PTHREAD_MUTEX_INITIALIZER;
 static int initialdownload=0;
+static paccount_cache_callback_t psync_cache_callback=NULL;
+
+void do_register_account_events_callback(paccount_cache_callback_t callback)
+{
+  psync_cache_callback=callback;
+}
+
+static void psync_notify_cache_change(psync_changetype_t event){
+  paccount_cache_callback_t callback;
+  psync_changetype_t  *chtype=psync_new(psync_changetype_t);
+  *chtype=event;
+  callback=psync_cache_callback;
+  if (callback)
+    psync_run_thread1("cache start callback", callback, chtype);
+}
+
 
 static void psync_diff_refresh_fs_add_folder(psync_folderid_t folderid);
 static void do_send_eventdata(void * param);
@@ -1451,26 +1467,32 @@ static void process_establishbsharein(const binresult *entry){
 static void process_acceptedshareout(const binresult *entry){
   psync_sql_res *q;
   const binresult *share, *br;
+  uint32_t aff = 0;
   if (!entry)
     return;
   share=psync_find_result(entry, "share", PARAM_HASH);
-  send_share_notify(PEVENT_SHARE_ACCEPTOUT, share);
   q=psync_sql_prep_statement("DELETE FROM sharerequest WHERE id=?");
   psync_sql_bind_uint(q, 1, psync_find_result(share, "sharerequestid", PARAM_NUM)->num);
-  psync_sql_run_free(q);
-  q=psync_sql_prep_statement("REPLACE INTO sharedfolder (id, isincoming, folderid, ctime, permissions, userid, mail, name) "
-                                                "VALUES (?, 0, ?, ?, ?, ?, ?, ?)");
-  debug(D_NOTICE, "INSERT NORMAL SHARE OUT id: %lld", (long long) psync_find_result(share, "shareid", PARAM_NUM)->num);
-  psync_sql_bind_uint(q, 1, psync_find_result(share, "shareid", PARAM_NUM)->num);
-  psync_sql_bind_uint(q, 2, psync_find_result(share, "folderid", PARAM_NUM)->num);
-  psync_sql_bind_uint(q, 3, psync_find_result(share, "created", PARAM_NUM)->num);
-  psync_sql_bind_uint(q, 4, psync_get_permissions(share));
-  psync_sql_bind_uint(q, 5, psync_find_result(share, "touserid", PARAM_NUM)->num);
-  br=psync_find_result(share, "tomail", PARAM_STR);
-  psync_sql_bind_lstring(q, 6, br->str, br->length);
-  br=psync_find_result(share, "sharename", PARAM_STR);
-  psync_sql_bind_lstring(q, 7, br->str, br->length);
-  psync_sql_run_free(q);
+  psync_sql_run(q);
+  aff=psync_sql_affected_rows();
+  psync_sql_free_result(q);
+  if (aff) {
+    send_share_notify(PEVENT_SHARE_ACCEPTOUT, share);
+      
+    q=psync_sql_prep_statement("REPLACE INTO sharedfolder (id, isincoming, folderid, ctime, permissions, userid, mail, name) "
+                                                  "VALUES (?, 0, ?, ?, ?, ?, ?, ?)");
+    debug(D_NOTICE, "INSERT NORMAL SHARE OUT id: %lld", (long long) psync_find_result(share, "shareid", PARAM_NUM)->num);
+    psync_sql_bind_uint(q, 1, psync_find_result(share, "shareid", PARAM_NUM)->num);
+    psync_sql_bind_uint(q, 2, psync_find_result(share, "folderid", PARAM_NUM)->num);
+    psync_sql_bind_uint(q, 3, psync_find_result(share, "created", PARAM_NUM)->num);
+    psync_sql_bind_uint(q, 4, psync_get_permissions(share));
+    psync_sql_bind_uint(q, 5, psync_find_result(share, "touserid", PARAM_NUM)->num);
+    br=psync_find_result(share, "tomail", PARAM_STR);
+    psync_sql_bind_lstring(q, 6, br->str, br->length);
+    br=psync_find_result(share, "sharename", PARAM_STR);
+    psync_sql_bind_lstring(q, 7, br->str, br->length);
+    psync_sql_run_free(q);
+  }
 }
 
 static void process_establishbshareout(const binresult *entry) {
@@ -1497,9 +1519,9 @@ static void process_establishbshareout(const binresult *entry) {
   psync_sql_bind_lstring(q, 5, br->str, br->length);
   br=psync_find_result(share, "sharename", PARAM_STR);
   psync_sql_bind_lstring(q, 6, br->str, br->length);
-  psync_sql_bind_int(q, 7, psync_find_result(share, "user", PARAM_NUM)->num);
+  psync_sql_bind_int(q, 7, psync_find_result(share, "user", PARAM_BOOL)->num);
   psync_sql_bind_int(q, 8, psync_find_result(share, "touserid", PARAM_NUM)->num);
-  psync_sql_bind_int(q, 9, psync_find_result(share, "team", PARAM_NUM)->num);
+  psync_sql_bind_int(q, 9, psync_find_result(share, "team", PARAM_BOOL)->num);
   psync_sql_bind_int(q, 10, psync_find_result(share, "toteamid", PARAM_NUM)->num);
   psync_sql_bind_int(q, 11, psync_find_result(share, "fromuserid", PARAM_NUM)->num);
   psync_sql_bind_int(q, 12, psync_find_result(share, "folderownerid", PARAM_NUM)->num);
@@ -1974,6 +1996,14 @@ static int psync_diff_check_quota(psync_socket *sock){
   return 0;
 }
 
+static void psync_cache_contacts() {
+  cache_account_emails();
+  cache_account_teams();
+  cache_links_all();
+  cache_contacts();
+  psync_notify_cache_change(PACCOUNT_CHANGE_ALL);
+}
+
 static void psync_diff_thread(){
   psync_socket *sock;
   binresult *res;
@@ -1995,10 +2025,6 @@ restart:
   if (ids.diffid==0)
     initialdownload=1;
   used_quota=psync_sql_cellint("SELECT value FROM setting WHERE id='usedquota'", 0);
-  cache_account_emails();
-  cache_account_teams();
-  cache_links_all();
-  cache_contacts();
   do{
     binparam diffparams[]={P_STR("timeformat", "timestamp"), P_NUM("limit", PSYNC_DIFF_LIMIT), P_NUM("diffid", ids.diffid)};
     if (!psync_do_run)
@@ -2049,6 +2075,10 @@ restart:
   psync_milisleep(50);
   psync_run_analyze_if_needed();
   while (psync_do_run){
+    if(psync_recache_contacts) {
+      psync_cache_contacts();
+      psync_recache_contacts = 0;
+    }
     if (psync_socket_pendingdata(sock))
       sel=1;
     else
@@ -2110,21 +2140,29 @@ restart:
           ret = chache_links(&err);
           if (ret < 0)
             debug(D_ERROR, "Cacheing links faild with err %s", err);
+          else
+            psync_notify_cache_change(PACCOUNT_CHANGE_LINKS);
         }
         else if (entries->length==11 && !strcmp(entries->str, "uploadlinks")){
           ids.uploadlinkid=psync_find_result(res, "uploadlinkid", PARAM_NUM)->num; 
           ret = chache_upload_links(&err);
           if (ret < 0)
-            debug(D_ERROR, "Cacheing upload links faild with err %s", err);
+            debug(D_ERROR, "Cacheing upload links failed with err %s", err);
+          else
+            psync_notify_cache_change(PACCOUNT_CHANGE_LINKS);
+          
         }
         else if (entries->length==5 && !strcmp(entries->str, "teams")){
           cache_account_teams();
+          psync_notify_cache_change(PACCOUNT_CHANGE_TEAMS);
         }
         else if (entries->length==5 && !strcmp(entries->str, "users")){
           cache_account_emails();
+          psync_notify_cache_change(PACCOUNT_CHANGE_EMAILS);
         }
          else if (entries->length==8 && !strcmp(entries->str, "contacts")){
           cache_contacts();
+          psync_notify_cache_change(PACCOUNT_CHANGE_CONTACTS);
         }
         else{
           debug(D_NOTICE, "got no from, did we send a nop recently?");

@@ -30,7 +30,6 @@
 #include "pnetlibs.h"
 
 #include <stdio.h>
-
 typedef struct _email_vis_params {
   char** email;
   size_t *length;
@@ -329,10 +328,15 @@ int do_psync_account_users(psync_userid_t iserids[], int nids, result_visitor vi
     sock = psync_apipool_get();
     bres = send_command(sock, "account_users", params);
   } else {
-    binparam params[] = {P_STR("auth", psync_my_auth), P_STR("timeformat", "timestamp")};
-
-    sock = psync_apipool_get();
-    bres = send_command(sock, "account_users", params);
+    if (psync_my_auth[0]) {
+      binparam params[] = {P_STR("auth", psync_my_auth), P_STR("timeformat", "timestamp")};
+      sock = psync_apipool_get();
+      bres = send_command(sock, "account_users", params);
+    } else {
+      binparam params[] =  {P_STR("username", psync_my_user), P_STR("password", psync_my_pass), P_STR("timeformat", "timestamp")};
+      sock = psync_apipool_get();
+      bres = send_command(sock, "account_users", params);
+    }
   }
   if (likely(bres))
     psync_apipool_release(sock);
@@ -416,15 +420,20 @@ int do_psync_account_teams(psync_userid_t teamids[], int nids, result_visitor vi
     
     debug(D_NOTICE, "Account_teams numids %d\n", nids);
     
-    binparam params[] = {P_STR("auth", psync_my_auth), P_STR("timeformat", "timestamp"),  P_STR("teamids", ids)};
+    binparam params[] = {P_STR("auth", psync_my_auth), P_STR("timeformat", "timestamp"),  P_STR("teamids", ids), P_STR("showeveryone", "1")};
 
     sock = psync_apipool_get();
     bres = send_command(sock, "account_teams", params);
   } else {
-    binparam params[] = {P_STR("auth", psync_my_auth), P_STR("timeformat", "timestamp")};
-
-    sock = psync_apipool_get();
-    bres = send_command(sock, "account_teams", params);
+    if (psync_my_auth[0]) {
+      binparam params[] = {P_STR("auth", psync_my_auth), P_STR("timeformat", "timestamp"), P_STR("showeveryone", "1")};
+      sock = psync_apipool_get();
+      bres = send_command(sock, "account_teams", params);
+    } else {
+      binparam params[] =  {P_STR("username", psync_my_user), P_STR("password", psync_my_pass), P_STR("timeformat", "timestamp"), P_STR("showeveryone", "1")};
+      sock = psync_apipool_get();
+      bres = send_command(sock, "account_teams", params);
+    }
   } 
   if (likely(bres))
     psync_apipool_release(sock);
@@ -493,10 +502,13 @@ static void insert_cache_email(int i, const binresult *user, void *_this) {
   uint64_t id = 0;
   psync_sql_res *q;
   int active = 0;
+  int frozen = 0;
   
   active = psync_find_result(user, "active", PARAM_BOOL)->num;
+  frozen = psync_find_result(user, "frozen", PARAM_BOOL)->num;
   id = psync_find_result(user, "id", PARAM_NUM)->num;
-  if (id && active) {
+
+  if (id && (active || frozen)) {
     q=psync_sql_prep_statement("REPLACE INTO baccountemail  (id, mail, firstname, lastname) VALUES (?, ?, ?, ?)");
     psync_sql_bind_uint(q, 1, id);
     psync_sql_bind_lstring(q, 2, char_field, strlen(char_field));
@@ -513,25 +525,26 @@ void cache_account_emails() {
   void *params = 0;
   psync_sql_res *q;
   
-  
+  psync_sql_lock();
   q=psync_sql_prep_statement("DELETE FROM baccountemail ");
   psync_sql_run_free(q);
   
   do_psync_account_users(userids, 0, &insert_cache_email, params);
+  psync_sql_unlock();
 }
 
 static void insert_cache_team(int i, const binresult *team, void *_this) {
   const char *nameret = 0;
   nameret = psync_find_result(team, "name", PARAM_STR)->str;
-  uint64_t shareid = 0;
+  uint64_t teamid = 0;
   psync_sql_res *q;
   
-  shareid = psync_find_result(team, "id", PARAM_NUM)->num;
+  teamid = psync_find_result(team, "id", PARAM_NUM)->num;
   
-  debug(D_NOTICE, "Team name %s team id %lld\n", nameret,(long long)shareid);
-  if (shareid) {
+  debug(D_NOTICE, "Team name %s team id %lld\n", nameret,(long long)teamid);
+  if (teamid >= 0) {
     q=psync_sql_prep_statement("REPLACE INTO baccountteam  (id, name) VALUES (?, ?)");
-    psync_sql_bind_uint(q, 1, shareid);
+    psync_sql_bind_uint(q, 1, teamid);
     psync_sql_bind_lstring(q, 2, nameret, strlen(nameret));
     psync_sql_run_free(q);
   }
@@ -542,7 +555,9 @@ void cache_account_teams() {
   void *params = 0;
   psync_sql_res *q;
   
+  psync_sql_lock();
   q=psync_sql_prep_statement("DELETE FROM baccountteam ");
   psync_sql_run_free(q);
   do_psync_account_teams(teamids, 0, &insert_cache_team, params);
+  psync_sql_unlock();
 }
