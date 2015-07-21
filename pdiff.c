@@ -1800,7 +1800,6 @@ static psync_socket_t setup_exeptions(){
   psync_timer_exception_handler(diff_exception_handler);
   return pfds[0];
 }
-
 static int send_diff_command(psync_socket *sock, subscribed_ids ids){
   if (psync_notifications_running()){
     const char *ts=psync_notifications_get_thumb_size();
@@ -1824,7 +1823,6 @@ static int send_diff_command(psync_socket *sock, subscribed_ids ids){
     return send_command_no_res(sock, "subscribe", diffparams)?0:-1;
   }
 }
-
 static void handle_exception(psync_socket **sock, subscribed_ids *ids, char ex){
   debug(D_NOTICE, "exception handler %c", ex);
   if (ex=='r' ||

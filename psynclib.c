@@ -213,7 +213,6 @@ int psync_init(){
 #ifdef P_OS_WINDOWS
   psync_run_thread("Overlay main thread", overlay_main_loop);
 #endif
-  
   return 0;
 }
 

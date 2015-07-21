@@ -24,8 +24,8 @@ void overlay_main_loop(VOID)
           PIPE_READMODE_MESSAGE |   // message-read mode
           PIPE_WAIT,                // blocking mode
           PIPE_UNLIMITED_INSTANCES, // max. instances
-          BUFSIZE,                  // output buffer size
-          BUFSIZE,                  // input buffer size
+          POVERLAY_BUFSIZE,         // output buffer size
+          POVERLAY_BUFSIZE,         // input buffer size
           0,                        // client time-out
           NULL);                    // default security attribute
 
@@ -57,8 +57,8 @@ void overlay_main_loop(VOID)
 void instance_thread(LPVOID lpvParam)
 {
    HANDLE hHeap      = GetProcessHeap();
-   TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE*sizeof(TCHAR));
-   TCHAR* pchReply   = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE*sizeof(TCHAR));
+   TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, POVERLAY_BUFSIZE*sizeof(TCHAR));
+   TCHAR* pchReply   = (TCHAR*)HeapAlloc(hHeap, 0, POVERLAY_BUFSIZE*sizeof(TCHAR));
 
    DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0;
    BOOL fSuccess = FALSE;
@@ -93,7 +93,7 @@ void instance_thread(LPVOID lpvParam)
       fSuccess = ReadFile(
          hPipe,        // handle to pipe
          pchRequest,    // buffer to receive data
-         BUFSIZE*sizeof(TCHAR), // size of buffer
+         POVERLAY_BUFSIZE*sizeof(TCHAR), // size of buffer
          &cbBytesRead, // number of bytes read
          NULL);        // not overlapped I/O
 
@@ -141,7 +141,7 @@ void get_answer_to_request( LPTSTR pchRequest,
     _tprintf( TEXT("Client Request String:\"%s\"\n"), pchRequest );
 
     // Check the outgoing message to make sure it's not too long for the buffer.
-    if (FAILED(StringCchCopy( pchReply, BUFSIZE, TEXT("default answer from server") )))
+    if (FAILED(StringCchCopy( pchReply, POVERLAY_BUFSIZE, TEXT("default answer from server") )))
     {
         *pchBytes = 0;
         pchReply[0] = 0;
