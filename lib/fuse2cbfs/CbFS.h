@@ -22,17 +22,17 @@
 //
 #define MAX_FILE_SYSTEM_NAME_LENGTH    10
 
-static LPCWSTR errStorageNotActive          = L"Storage is Not Active";
-static LPCWSTR errStorageIsActive           = L"Storage is Active";
-static LPCWSTR errInvalidMountingPointIndex = L"Invalid Index Value for Mounting Point";
-static LPCWSTR errInvalidSectorSize         = L"Invalid sector size";
-static LPCWSTR errUnknown                   = L"Unknown error";
+static LPCWSTR errCbFsStorageNotActive          = L"Storage is Not Active";
+static LPCWSTR errCbFsStorageIsActive           = L"Storage is Active";
+static LPCWSTR errCbFsInvalidMountingPointIndex = L"Invalid Index Value for Mounting Point";
+static LPCWSTR errCbFsInvalidSectorSize         = L"Invalid sector size";
+static LPCWSTR errCbFsUnknown                   = L"Unknown error";
 
-static LPCWSTR errInvalidKey        = L"Not valid license key";
-static LPCWSTR errExpired           = L"Your license key is expired";
-static LPCWSTR errProductID         = L"License key is used with not proper product";
-static LPCWSTR errInvalidData       = L"License key missing some information";
-static LPCWSTR errNotInitialized    = L"Initialization error. Invoke CallbackFileSystem::Initialize() method first";
+static LPCWSTR errCbFsInvalidKey        = L"Not valid license key";
+static LPCWSTR errCbFsExpired           = L"Your license key is expired";
+static LPCWSTR errCbFsProductID         = L"License key is used with not proper product";
+static LPCWSTR errCbFsInvalidData       = L"License key missing some information";
+static LPCWSTR errCbFsNotInitialized    = L"Initialization error. Invoke CallbackFileSystem::Initialize() method first";
 
 class CallbackFileSystem;
 class CbFsDirectoryEnumerationInfo;
