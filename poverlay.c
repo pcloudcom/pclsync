@@ -6,6 +6,8 @@
 #include <tchar.h>
 #include <strsafe.h>
 
+#define POVERLAY_BUFSIZE 4096
+
 #include "poverlay.h"
 
 LPCWSTR PORT = TEXT("\\\\.\\pipe\\pStatusPipe");
@@ -57,10 +59,10 @@ void overlay_main_loop(VOID)
 void instance_thread(LPVOID lpvParam)
 {
    HANDLE hHeap      = GetProcessHeap();
-   TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, POVERLAY_BUFSIZE*sizeof(TCHAR));
-   TCHAR* pchReply   = (TCHAR*)HeapAlloc(hHeap, 0, POVERLAY_BUFSIZE*sizeof(TCHAR));
+   message* request = (message*)HeapAlloc(hHeap, 0, POVERLAY_BUFSIZE);
+   message* reply   = (message*)HeapAlloc(hHeap, 0, POVERLAY_BUFSIZE);
 
-   DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0;
+   DWORD cbBytesRead = 0, cbWritten = 0;
    BOOL fSuccess = FALSE;
    HANDLE hPipe  = NULL;
 
@@ -92,32 +94,29 @@ void instance_thread(LPVOID lpvParam)
    {
       fSuccess = ReadFile(
          hPipe,        // handle to pipe
-         pchRequest,    // buffer to receive data
-         POVERLAY_BUFSIZE*sizeof(TCHAR), // size of buffer
+         request,    // buffer to receive data
+         POVERLAY_BUFSIZE, // size of buffer
          &cbBytesRead, // number of bytes read
          NULL);        // not overlapped I/O
 
       if (!fSuccess || cbBytesRead == 0)
       {
           if (GetLastError() == ERROR_BROKEN_PIPE)
-          {
               debug(D_NOTICE, "InstanceThread: client disconnected.\n");
-          }
           else
-          {
+
               debug(D_NOTICE, "InstanceThread ReadFile failed, GLE=%d.\n", GetLastError());
-          }
           break;
       }
-      get_answer_to_request(pchRequest, pchReply, &cbReplyBytes);
+      get_answer_to_request(request, reply);
       fSuccess = WriteFile(
          hPipe,        // handle to pipe
-         pchReply,     // buffer to write from
-         cbReplyBytes, // number of bytes to write
+         reply,     // buffer to write from
+         reply->length, // number of bytes to write
          &cbWritten,   // number of bytes written
          NULL);        // not overlapped I/O
 
-      if (!fSuccess || cbReplyBytes != cbWritten)
+      if (!fSuccess || reply->length != cbWritten)
       {
           debug(D_NOTICE, "InstanceThread WriteFile failed, GLE=%d.\n", GetLastError());
           break;
@@ -134,21 +133,15 @@ void instance_thread(LPVOID lpvParam)
    return;
 }
 
-void get_answer_to_request( LPTSTR pchRequest,
-                         LPTSTR pchReply,
-                         LPDWORD pchBytes )
+void get_answer_to_request(message request, message replay)
 {
-    _tprintf( TEXT("Client Request String:\"%s\"\n"), pchRequest );
+    const char msg[4] = "Ok.";
+    msg[3] = '\0';
+    printf( "Client Request type [%d] len [%d] string: [%s]", request.type, request.length, request.value );
+    replay.type = 10;
+    replay.length = sizeof(message)+ 3;
+    strncpy(replay.value, msg, 4);
 
-    // Check the outgoing message to make sure it's not too long for the buffer.
-    if (FAILED(StringCchCopy( pchReply, POVERLAY_BUFSIZE, TEXT("default answer from server") )))
-    {
-        *pchBytes = 0;
-        pchReply[0] = 0;
-        debug(D_NOTICE, "StringCchCopy failed, no outgoing message.\n");
-        return;
-    }
-    *pchBytes = (lstrlen(pchReply)+1)*sizeof(TCHAR);
 }
 
 
