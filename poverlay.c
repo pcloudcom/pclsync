@@ -42,7 +42,7 @@ void overlay_main_loop(VOID)
 
       if (fConnected)
       {
-         debug(D_NOTICE, "Client connected, creating a processing thread.\n");
+        // debug(D_NOTICE, "Client connected, creating a processing thread.\n");
          psync_run_thread1(
             "Pipe request handle routine",
             instance_thread,    // thread proc
@@ -69,26 +69,10 @@ void instance_thread(LPVOID lpvParam)
    if (lpvParam == NULL)
    {
        debug(D_ERROR,  "InstanceThread got an unexpected NULL value in lpvParam.\n");
-       if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
-       if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
        return (DWORD)-1;
    }
 
-   if (pchRequest == NULL)
-   {
-       debug(D_ERROR,  "   InstanceThread got an unexpected NULL heap allocation.\n");
-       if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
-       return (DWORD)-1;
-   }
-
-   if (pchReply == NULL)
-   {
-       debug(D_ERROR,  "   InstanceThread got an unexpected NULL heap allocation.\n");
-       if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
-       return (DWORD)-1;
-   }
-
-   debug(D_NOTICE, "InstanceThread created, receiving and processing messages.\n");
+  // debug(D_NOTICE, "InstanceThread created, receiving and processing messages.\n");
    hPipe = (HANDLE) lpvParam;
    while (1)
    {
@@ -125,22 +109,22 @@ void instance_thread(LPVOID lpvParam)
   FlushFileBuffers(hPipe);
   DisconnectNamedPipe(hPipe);
   CloseHandle(hPipe);
-  HeapFree(hHeap, 0, pchRequest);
-  HeapFree(hHeap, 0, pchReply);
+  HeapFree(hHeap, 0, request);
+  HeapFree(hHeap, 0, reply);
 
 
    debug(D_NOTICE, "InstanceThread exitting.\n");
    return;
 }
 
-void get_answer_to_request(message request, message replay)
+void get_answer_to_request(message *request, message *replay)
 {
-    const char msg[4] = "Ok.";
+    char msg[4] = "Ok.";
     msg[3] = '\0';
-    printf( "Client Request type [%d] len [%d] string: [%s]", request.type, request.length, request.value );
-    replay.type = 10;
-    replay.length = sizeof(message)+ 3;
-    strncpy(replay.value, msg, 4);
+    debug(D_NOTICE, "Client Request type [%d] len [%d] string: [%s]", request->type, request->length, request->value );
+    replay->type = 10;
+    replay->length = sizeof(message)+ 3;
+    strncpy(replay->value, msg, 4);
 
 }
 
