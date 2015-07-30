@@ -652,6 +652,7 @@ plink_contents_t *do_show_link(const char *code, char **err /*OUT*/) {
   link_cont_t *pcont;
   const binresult *contents = 0, *meta = 0, *link = 0, *br =0;
   uint32_t concnt = 0, i = 0;
+  plink_contents_t *ret = 0;
   *err = 0;
   
   binparam params[] = {P_STR("auth", psync_my_auth),P_STR("timeformat", "timestamp"), P_STR("iconformat","id"), P_STR("code", code)};
@@ -690,8 +691,9 @@ plink_contents_t *do_show_link(const char *code, char **err /*OUT*/) {
       }
       pcont->icon = psync_find_result(link, "icon", PARAM_NUM)->num;
     }
+    ret = (plink_contents_t *)psync_list_builder_finalize(builder);
     psync_free(bres);
-    return (plink_contents_t *)psync_list_builder_finalize(builder);
+    return ret;
   }
   psync_free(bres);
   return 0;
@@ -808,4 +810,70 @@ void cache_links_all()
     if (err)
       psync_free(err);
   }
+}
+
+int do_delete_all_links(int64_t folderid, int64_t fileid, char**err) {
+  psync_sql_res *res;
+  psync_uint_row row;
+  int ret = 0;
+
+  cache_links_all();
+  res=psync_sql_query_rdlock("SELECT id, folderid, fileid, isincomming FROM links where folderid = ? or fileid = ? ");
+  psync_sql_bind_int(res, 1, folderid);
+  psync_sql_bind_int(res, 2, fileid);
+
+  while ((row=psync_sql_fetch_rowint(res))){
+    if (row[3]) {
+      ret = do_psync_delete_upload_link(row[0],err);
+      if (ret) return ret;
+    } else {
+      ret = do_psync_delete_link(row[0],err);
+      if (ret) return ret;
+    }
+  }
+  return 0;
+}
+
+int do_delete_all_folder_links(psync_folderid_t folderid, char**err) {
+  psync_sql_res *res;
+  psync_full_result_int *rows;
+  int ret = 0, i;
+  
+  res=psync_sql_query_rdlock("SELECT id, folderid, fileid, isincomming FROM links where folderid = ? ");
+  psync_sql_bind_uint(res, 1, folderid);
+
+  rows = psync_sql_fetchall_int(res);
+  
+  for (i = 0;i < rows->rows; ++i) {
+    if (psync_get_result_cell(rows, i, 3)) {
+      ret = do_psync_delete_upload_link(psync_get_result_cell(rows, i, 0),err);
+      if (ret) return ret;
+    } else {
+      ret = do_psync_delete_link(psync_get_result_cell(rows, i, 0),err);
+      if (ret) return ret;
+    }
+  } 
+  return 0;
+}
+
+int do_delete_all_file_links(psync_fileid_t fileid, char**err) {
+  psync_sql_res *res;
+  psync_full_result_int *rows;
+  int ret = 0, i;
+
+  res=psync_sql_query_rdlock("SELECT id, folderid, fileid, isincomming FROM links where fileid = ? ");
+  psync_sql_bind_uint(res, 1, fileid);
+
+  rows = psync_sql_fetchall_int(res);
+  
+  for (i = 0;i < rows->rows; ++i) {
+    if (psync_get_result_cell(rows, i, 3)) {
+      ret = do_psync_delete_upload_link(psync_get_result_cell(rows, i, 0), err);
+      if (ret) return ret;
+    } else {
+      ret = do_psync_delete_link(psync_get_result_cell(rows, i, 0), err);
+      if (ret) return ret;
+    }
+  }
+  return 0;
 }

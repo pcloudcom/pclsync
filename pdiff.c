@@ -1253,16 +1253,19 @@ static void send_share_notify(psync_eventtype_t eventid, const binresult *share)
     psync_sql_res *res;
     psync_variant_row row;
     const char *cstr;
+   
     if ((br=psync_check_result(share, "shareid", PARAM_NUM)))
-      res=psync_sql_query("SELECT name, ctime FROM sharedfolder WHERE id=? or id = - ?");
+      if (isba)
+        res=psync_sql_query("SELECT name, ctime FROM bsharedfolder WHERE id=? ");
+      else
+        res=psync_sql_query("SELECT name, ctime FROM sharedfolder WHERE id=? ");
     else if ((br=psync_check_result(share, "sharerequestid", PARAM_NUM)))
-      res=psync_sql_query("SELECT name, ctime FROM sharerequest WHERE id=? or id = ?");
+      res=psync_sql_query("SELECT name, ctime FROM sharerequest WHERE id=? ");
     else {
       debug(D_WARNING, "Neither sharename, shareid or sharerequestid found for eventtype %u", (unsigned)eventid);
       return;
     }
     psync_sql_bind_uint(res, 1, br->num);
-    psync_sql_bind_uint(res, 2, br->num);
     if ((row=psync_sql_fetch_row(res))){
       cstr=psync_get_lstring(row[0], &sharenamelen);
       stringslen+=++sharenamelen;
@@ -1378,16 +1381,31 @@ static void process_requestsharein(const binresult *entry){
 }
 
 static void process_requestshareout(const binresult *entry){
-  psync_sql_res *q;
+  psync_sql_res *q, *res;
   const binresult *share, *br;
+  int isincomming =  0;
+  uint64_t folderowneruserid = 0, owneruserid, folderid;
+  psync_uint_row row;
+  
   if (!entry)
     return;
+  
   share=psync_find_result(entry, "share", PARAM_HASH);
+  folderid = psync_find_result(share, "folderid", PARAM_NUM)->num;
+  
+  res=psync_sql_query_rdlock("SELECT userid FROM folder WHERE id=?");
+  psync_sql_bind_uint(res, 1, folderid);
+  while ((row=psync_sql_fetch_rowint(res)))
+    folderowneruserid = row[0];
+  psync_sql_free_result(res);
+  owneruserid =  psync_find_result(share, "owneruserid", PARAM_NUM)->num;
+  isincomming = (folderowneruserid == owneruserid) ? 0 : 1;
+  
   send_share_notify(PEVENT_SHARE_REQUESTOUT, share);
-  q=psync_sql_prep_statement("REPLACE INTO sharerequest (id, isincoming, folderid, ctime, etime, permissions, userid, mail, name, message) "
-                                                "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?)");
+  q=psync_sql_prep_statement("REPLACE INTO sharerequest (id, folderid, ctime, etime, permissions, userid, mail, name, message, isincoming, isba) "
+                                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
   psync_sql_bind_uint(q, 1, psync_find_result(share, "sharerequestid", PARAM_NUM)->num);
-  psync_sql_bind_uint(q, 2, psync_find_result(share, "folderid", PARAM_NUM)->num);
+  psync_sql_bind_uint(q, 2, folderid);
   psync_sql_bind_uint(q, 3, psync_find_result(share, "created", PARAM_NUM)->num);
   psync_sql_bind_uint(q, 4, psync_find_result(share, "expires", PARAM_NUM)->num);
   psync_sql_bind_uint(q, 5, psync_get_permissions(share));
@@ -1401,6 +1419,8 @@ static void process_requestshareout(const binresult *entry){
     psync_sql_bind_lstring(q, 9, br->str, br->length);
   else
     psync_sql_bind_null(q, 9);
+  psync_sql_bind_uint(q, 10, isincomming);
+  psync_sql_bind_uint(q, 11, isincomming);
   psync_sql_run_free(q);
 }
 
@@ -1497,17 +1517,27 @@ static void process_acceptedshareout(const binresult *entry){
 
 static void process_establishbshareout(const binresult *entry) {
   psync_sql_res *q;
-  const binresult *share, *br;
+  const binresult *share, *br, *ownid;
   char *email = 0;
+  int isincomming =  0;
+  uint64_t folderowneruserid, owneruserid;
   
   if (!entry)
     return;
+  
   share=psync_find_result(entry, "share", PARAM_HASH);
+  ownid =  psync_check_result(share, "folderownerid", PARAM_NUM);
+  if(ownid) {
+    folderowneruserid = ownid->num;
+    owneruserid =  psync_find_result(share, "fromuserid", PARAM_NUM)->num;
+    isincomming = (folderowneruserid == owneruserid) ? 0 : 1;
+  }
+  
   send_share_notify(PEVENT_SHARE_ACCEPTOUT, share);
   
-  q=psync_sql_prep_statement("REPLACE INTO bsharedfolder (id, isincoming, folderid, ctime, permissions, message, name, isuser, "
-                                                          "touserid, isteam, toteamid, fromuserid, folderownerid)"
-                                                "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  q=psync_sql_prep_statement("REPLACE INTO bsharedfolder (id, folderid, ctime, permissions, message, name, isuser, "
+                                                          "touserid, isteam, toteamid, fromuserid, folderownerid, isincoming)"
+                                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
   psync_sql_bind_int(q, 1, psync_find_result(share, "shareid", PARAM_NUM)->num);
   psync_sql_bind_uint(q, 2, psync_find_result(share, "folderid", PARAM_NUM)->num);
   if ((br=psync_check_result(share, "shared", PARAM_NUM)) || (br=psync_check_result(entry, "time", PARAM_NUM))) 
@@ -1525,6 +1555,7 @@ static void process_establishbshareout(const binresult *entry) {
   psync_sql_bind_int(q, 10, psync_find_result(share, "toteamid", PARAM_NUM)->num);
   psync_sql_bind_int(q, 11, psync_find_result(share, "fromuserid", PARAM_NUM)->num);
   psync_sql_bind_int(q, 12, psync_find_result(share, "folderownerid", PARAM_NUM)->num);
+  psync_sql_bind_int(q, 13, isincomming);
 
   psync_sql_run_free(q);
   debug(D_NOTICE, "INSERT BS SHARE IN FINISHED id: %lld", - (long long) psync_find_result(share, "shareid", PARAM_NUM)->num);
