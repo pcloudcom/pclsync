@@ -140,7 +140,7 @@ static inline void psync_aes256_decode_2blocks_consec(psync_aes256_decoder enc, 
   aes_crypt_ecb(enc, AES_DECRYPT, src+PSYNC_AES256_BLOCK_SIZE, dst+PSYNC_AES256_BLOCK_SIZE);
 }
 
-static inline void void psync_aes256_decode_4blocks_consec_xor(psync_aes256_decoder enc, const unsigned char *src, unsigned char *dst, unsigned char *bxor){
+static inline void psync_aes256_decode_4blocks_consec_xor(psync_aes256_decoder enc, const unsigned char *src, unsigned char *dst, unsigned char *bxor){
   unsigned long i;
   aes_crypt_ecb(enc, AES_DECRYPT, src, dst);
   aes_crypt_ecb(enc, AES_DECRYPT, src+PSYNC_AES256_BLOCK_SIZE, dst+PSYNC_AES256_BLOCK_SIZE);
