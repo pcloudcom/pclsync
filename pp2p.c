@@ -626,7 +626,8 @@ static int psync_p2p_download(psync_socket_t sock, psync_fileid_t fileid, const 
   }
   ekey=psync_ssl_alloc_encrypted_symmetric_key(keylen);
   if (unlikely_log(socket_read_all(sock, ekey->data, keylen)) ||
-      unlikely_log((key=psync_ssl_rsa_decrypt_symmetric_key(psync_rsa_private, ekey))==PSYNC_INVALID_SYM_KEY)){
+    unlikely_log((key = psync_ssl_rsa_decrypt_symm_key_lock(psync_rsa_private, ekey)) == PSYNC_INVALID_SYM_KEY)) {
+      //unlikely_log((key=psync_ssl_rsa_decrypt_symmetric_key(psync_rsa_private, ekey))==PSYNC_INVALID_SYM_KEY)){
     psync_free(ekey);
     return PSYNC_NET_TEMPFAIL;
   }
@@ -660,6 +661,7 @@ static int psync_p2p_download(psync_socket_t sock, psync_fileid_t fileid, const 
   psync_file_close(fd);
   psync_hash_final(hashbin, &hashctx);
   psync_binhex(hashhex, hashbin, PSYNC_HASH_DIGEST_LEN);
+  debug(D_NOTICE, "downloaded file %s from peer", filename);
   if (memcmp(hashhex, filehashhex, PSYNC_HASH_DIGEST_HEXLEN)){
     /* it is better to return permanent fail and let the block checksum algo to find bad blocks */
     debug(D_WARNING, "got bad checksum for file %s", filename);
@@ -772,7 +774,10 @@ int psync_p2p_check_download(psync_fileid_t fileid, const unsigned char *filehas
   if (bresp==P2P_RESP_NOPE)
     goto err_perm2;
   else if (bresp==P2P_RESP_WAIT){
-    psync_milisleep(PSYNC_P2P_SLEEP_WAIT_DOWNLOAD);
+    uint32_t rnd;
+    psync_ssl_rand_weak((unsigned char *)&rnd, sizeof(rnd));
+    rnd&=0x7ff;
+    psync_milisleep(PSYNC_P2P_SLEEP_WAIT_DOWNLOAD+rnd);
     goto err_temp2;
   }
   if (psync_p2p_check_rsa())

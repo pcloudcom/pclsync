@@ -1,7 +1,7 @@
 /* Copyright (c) 2014 Anton Titov.
  * Copyright (c) 2014 pCloud Ltd.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright
@@ -12,7 +12,7 @@
  *     * Neither the name of pCloud Ltd nor the
  *       names of its contributors may be used to endorse or promote products
  *       derived from this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -31,6 +31,7 @@
 #include "pfsfolder.h"
 #include "ptree.h"
 #include "psynclib.h"
+#include "plibs.h"
 #include <time.h>
 #include <stddef.h>
 #include <string.h>
@@ -45,6 +46,8 @@
 #define PSYNC_FS_TASK_RENFOLDER_TO   8
 #define PSYNC_FS_TASK_MODIFY         9
 #define PSYNC_FS_TASK_UN_SET_REV    10
+#define PSYNC_FS_TASK_SET_FILE_MOD  11
+#define PSYNC_FS_TASK_SET_FILE_CR   12
 
 typedef struct {
   psync_tree tree;
@@ -67,6 +70,7 @@ typedef struct {
 typedef struct {
   psync_tree tree;
   psync_fsfileid_t fileid;
+  psync_fileid_t rfileid; // fileid of an uploaded file, reopened for writing, 0 if this is a new file
   uint64_t taskid;
   char name[];
 } psync_fstask_creat_t;
@@ -91,6 +95,7 @@ typedef struct {
   psync_tree *rmdirs;
   psync_tree *creats;
   psync_tree *unlinks;
+  time_t mtime;
   uint32_t taskscnt;
   uint32_t refcnt;
 } psync_fstask_folder_t;
@@ -136,13 +141,14 @@ psync_fstask_mkdir_t *psync_fstask_find_mkdir_by_folderid(psync_fstask_folder_t 
 psync_fstask_creat_t *psync_fstask_find_creat_by_fileid(psync_fstask_folder_t *folder, psync_fsfileid_t fileid);
 
 int psync_fstask_mkdir(psync_fsfolderid_t folderid, const char *name, uint32_t folderflags);
-int psync_fstask_can_rmdir(psync_fsfolderid_t folderid, const char *name);
-int psync_fstask_rmdir(psync_fsfolderid_t folderid, const char *name);
-psync_fstask_creat_t *psync_fstask_add_creat(psync_fstask_folder_t *folder, const char *name, const char *encsymkey, size_t encsymkeylen);
+int psync_fstask_can_rmdir(psync_fsfolderid_t folderid, uint32_t parentflags, const char *name);
+int psync_fstask_rmdir(psync_fsfolderid_t folderid, uint32_t parentflags, const char *name);
+psync_fstask_creat_t *psync_fstask_add_creat(psync_fstask_folder_t *folder, const char *name, psync_fsfileid_t fileid, const char *encsymkey, size_t encsymkeylen);
 void psync_fstask_inject_creat(psync_fstask_folder_t *folder, psync_fstask_creat_t *cr);
 void psync_fstask_inject_unlink(psync_fstask_folder_t *folder, psync_fstask_unlink_t *un);
-psync_fstask_creat_t *psync_fstask_add_modified_file(psync_fstask_folder_t *folder, const char *name, psync_fsfileid_t fileid, 
+psync_fstask_creat_t *psync_fstask_add_modified_file(psync_fstask_folder_t *folder, const char *name, psync_fsfileid_t fileid,
                                                      uint64_t hash, const char *encsymkey, size_t encsymkeylen);
+int psync_fstask_set_mtime(psync_fileid_t fileid, uint64_t oldtm, uint64_t newtm, int is_ctime);
 
 int psync_fstask_add_local_creat_static(psync_fsfolderid_t folderid, const char *name, const void *data, size_t datalen);
 
@@ -150,11 +156,15 @@ int psync_fstask_add_local_creat_static(psync_fsfolderid_t folderid, const char 
 int psync_fstask_can_unlink(psync_fsfolderid_t folderid, const char *name);
 int psync_fstask_unlink(psync_fsfolderid_t folderid, const char *name);
 int psync_fstask_rename_file(psync_fsfileid_t fileid, psync_fsfolderid_t parentfolderid, const char *name,  psync_fsfolderid_t to_folderid, const char *new_name);
-int psync_fstask_rename_folder(psync_fsfolderid_t folderid, psync_fsfolderid_t parentfolderid, const char *name,  psync_fsfolderid_t to_folderid, 
+int psync_fstask_rename_folder(psync_fsfolderid_t folderid, psync_fsfolderid_t parentfolderid, const char *name,  psync_fsfolderid_t to_folderid,
                                const char *new_name, uint32_t targetflags);
 
 void psync_fstask_clean();
 
 void psync_fstask_add_banned_folders();
+
+#if IS_DEBUG
+void psync_fstask_dump_state();
+#endif
 
 #endif

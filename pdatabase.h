@@ -43,7 +43,7 @@
 #define PSYNC_TEXT_COL "COLLATE NOCASE"
 #endif
 
-#define PSYNC_DATABASE_VERSION 11
+#define PSYNC_DATABASE_VERSION 22
 
 #define PSYNC_DATABASE_CONFIG \
 "\
@@ -102,9 +102,9 @@ CREATE INDEX IF NOT EXISTS ktaskitemid ON task(itemid);\
 CREATE INDEX IF NOT EXISTS ktasklocalitemid ON task(localitemid);\
 CREATE TABLE IF NOT EXISTS hashchecksum (hash INTEGER, size INTEGER, checksum TEXT, PRIMARY KEY (hash, size)) " P_SQL_WOWROWID ";\
 CREATE TABLE IF NOT EXISTS sharerequest (id INTEGER PRIMARY KEY, isincoming INTEGER, folderid INTEGER, ctime INTEGER, etime INTEGER, permissions INTEGER,\
-  userid INTEGER, mail TEXT, name VARCHAR(1024), message TEXT);\
+  userid INTEGER, mail TEXT, name VARCHAR(1024), message TEXT, isba INTEGER);\
 CREATE TABLE IF NOT EXISTS sharedfolder (id INTEGER PRIMARY KEY, isincoming INTEGER, folderid INTEGER, ctime INTEGER, permissions INTEGER,\
-  userid INTEGER, mail TEXT, name VARCHAR(1024));\
+  userid INTEGER, mail TEXT, name VARCHAR(1024), bsharedfolderid INTEGER);\
 CREATE TABLE IF NOT EXISTS pagecache (id INTEGER PRIMARY KEY, hash INTEGER, pageid INTEGER, type INTEGER, flags INTEGER,\
   lastuse INTEGER, usecnt INTEGER, size INTEGER, crc INTEGER);\
 CREATE UNIQUE INDEX IF NOT EXISTS kpagecachehashpageid ON pagecache(hash, pageid);\
@@ -125,9 +125,22 @@ CREATE TABLE IF NOT EXISTS resolver (hostname TEXT, port TEXT, prio INTEGER, cre
 CREATE TABLE IF NOT EXISTS fsxattr (objectid INTEGER, name TEXT, value BLOB, PRIMARY KEY (objectid, name)) " P_SQL_WOWROWID ";\
 CREATE TABLE IF NOT EXISTS cryptofolderkey (folderid INTEGER PRIMARY KEY REFERENCES folder(id) ON DELETE CASCADE, enckey BLOB NOT NULL);\
 CREATE TABLE IF NOT EXISTS cryptofilekey (fileid INTEGER PRIMARY KEY REFERENCES file(id) ON DELETE CASCADE, hash INTEGER NOT NULL, enckey BLOB NOT NULL);\
+CREATE TABLE IF NOT EXISTS bsharedfolder (id INTEGER PRIMARY KEY, isincoming INTEGER, folderid INTEGER, \
+  ctime INTEGER, permissions INTEGER, message TEXT, name VARCHAR(1024), isuser INTEGER, \
+  touserid INTEGER, isteam INTEGER, toteamid INTEGER, fromuserid INTEGER, folderownerid INTEGER); \
+CREATE TABLE IF NOT EXISTS baccountemail (id INTEGER PRIMARY KEY, mail TEXT, firstname TEXT, lastname TEXT); \
+CREATE TABLE IF NOT EXISTS baccountteam (id INTEGER PRIMARY KEY, name TEXT); \
+CREATE TABLE IF NOT EXISTS links ( \
+id INTEGER PRIMARY KEY, code VARCHAR(2048), comment TEXT, traffic INTEGER, maxspace INTEGER, \
+downloads INTEGER, created INTEGER, modified INTEGER, name VARCHAR(2048),  isfolder INTEGER, folderid INTEGER, fileid INTEGER, isincomming INTEGER, icon INTEGER, fulllink VARCHAR(2048), \
+parentfolderid INTEGER, haspassword INTEGER, type INTEGER, views INTEGER, expire INTEGER, enableuploadforchosenusers INTEGER, enableuploadforeveryone INTEGER); \
+CREATE TABLE IF NOT EXISTS contacts (id INTEGER PRIMARY KEY, mail varchar(2048), name TEXT); \
 INSERT OR IGNORE INTO folder (id, name) VALUES (0, '');\
 INSERT OR IGNORE INTO localfolder (id) VALUES (0);\
 INSERT OR IGNORE INTO setting (id, value) VALUES ('dbversion', " NTO_STR(PSYNC_DATABASE_VERSION) ");\
+CREATE TABLE IF NOT EXISTS myteams (id INTEGER PRIMARY KEY, name TEXT); \
+CREATE TABLE IF NOT EXISTS devices (id INTEGER PRIMARY KEY, last_path VARCHAR(1024), type INTEGER, vendor VARCHAR(2048), product VARCHAR(2048), device_id VARCHAR(4096),\
+  connected INTEGER, enabled INTEGER); \
 COMMIT;\
 "
 
@@ -222,7 +235,67 @@ CREATE INDEX IF NOT EXISTS klocalfolderfolderid ON localfolder(folderid);\
 CREATE INDEX IF NOT EXISTS klocalfoldersyncid ON localfolder(syncid);\
 UPDATE setting SET value=11 WHERE id='dbversion';\
 COMMIT;\
-PRAGMA foreign_keys=ON;"
+PRAGMA foreign_keys=ON;",
+  "BEGIN;\
+ALTER TABLE sharedfolder ADD bsharedfolderid INTEGER;\
+CREATE TABLE IF NOT EXISTS bsharedfolder (id INTEGER PRIMARY KEY, isincoming INTEGER, folderid INTEGER, \
+ctime INTEGER, permissions INTEGER, message TEXT, name VARCHAR(1024), isuser INTEGER, \
+touserid INTEGER, isteam INTEGER, toteamid INTEGER, fromuserid INTEGER, folderownerid INTEGER); \
+UPDATE setting SET value=12 WHERE id='dbversion';\
+COMMIT;",
+  "BEGIN;\
+CREATE TABLE IF NOT EXISTS baccountemail (id INTEGER PRIMARY KEY, mail TEXT, firstname TEXT, lastname TEXT); \
+CREATE TABLE IF NOT EXISTS baccountteam (id INTEGER PRIMARY KEY, name TEXT); \
+CREATE TABLE IF NOT EXISTS links ( \
+id INTEGER PRIMARY KEY, code VARCHAR(2048), comment TEXT, traffic INTEGER, maxspace INTEGER, \
+downloads INTEGER, created INTEGER, modified INTEGER, name VARCHAR(2048),  isfolder INTEGER, folderid INTEGER, fileid INTEGER, isincomming INTEGER); \
+CREATE TABLE IF NOT EXISTS contacts (id INTEGER PRIMARY KEY, mail varchar(2048), name TEXT); \
+UPDATE setting SET value=13 WHERE id='dbversion'; \
+COMMIT;",
+"BEGIN;\
+ALTER TABLE links ADD icon INTEGER; \
+UPDATE setting SET value=14 WHERE id='dbversion'; \
+COMMIT;",
+"BEGIN;\
+ALTER TABLE sharerequest ADD isba INTEGER; \
+UPDATE setting SET value=15 WHERE id='dbversion'; \
+COMMIT;",
+"BEGIN;\
+CREATE TABLE IF NOT EXISTS myteams (id INTEGER PRIMARY KEY, name TEXT);\
+UPDATE setting SET value=16 WHERE id='dbversion'; \
+UPDATE setting SET value=0 WHERE id='diffid'; \
+COMMIT;",
+"BEGIN;\
+UPDATE setting SET value=17 WHERE id='dbversion'; \
+UPDATE setting SET value=0 WHERE id='diffid'; \
+COMMIT;",
+"BEGIN;\
+CREATE TABLE IF NOT EXISTS devices (id INTEGER PRIMARY KEY, last_path VARCHAR(1024), type INTEGER, vendor VARCHAR(2048), product VARCHAR(2048), device_id VARCHAR(4096),\
+  connected INTEGER, enabled INTEGER); \
+COMMIT;",
+"BEGIN;\
+UPDATE setting SET value=19 WHERE id='dbversion'; \
+UPDATE setting SET value=0 WHERE id='diffid'; \
+COMMIT;",
+"BEGIN;\
+ALTER TABLE links ADD fulllink VARCHAR(2048); \
+UPDATE setting SET value=20 WHERE id='dbversion'; \
+COMMIT;",
+"BEGIN;\
+ALTER TABLE links ADD parentfolderid INTEGER; \
+ALTER TABLE links ADD haspassword INTEGER; \
+ALTER TABLE links ADD type INTEGER; \
+ALTER TABLE links ADD views INTEGER; \
+UPDATE setting SET value=21 WHERE id='dbversion'; \
+COMMIT;",
+"BEGIN;\
+DROP TABLE links; \
+CREATE TABLE IF NOT EXISTS links ( \
+id INTEGER PRIMARY KEY, code VARCHAR(2048), comment TEXT, traffic INTEGER, maxspace INTEGER, \
+downloads INTEGER, created INTEGER, modified INTEGER, name VARCHAR(2048),  isfolder INTEGER, folderid INTEGER, fileid INTEGER, isincomming INTEGER, icon INTEGER, fulllink VARCHAR(2048), \
+parentfolderid INTEGER, haspassword INTEGER, type INTEGER, views INTEGER, expire INTEGER, enableuploadforchosenusers INTEGER, enableuploadforeveryone INTEGER); \
+UPDATE setting SET value=22 WHERE id='dbversion'; \
+COMMIT;"
 };
 
 #endif

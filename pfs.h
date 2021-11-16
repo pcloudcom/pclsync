@@ -38,7 +38,10 @@
 #include "pcompat.h"
 #include "pcrypto.h"
 #include "pcrc32c.h"
+#include "ptimer.h"
+#include "plibs.h"
 #include <pthread.h>
+
 
 #if defined(P_OS_POSIX)
 #define psync_fs_need_per_folder_refresh() psync_fs_need_per_folder_refresh_f()
@@ -68,6 +71,7 @@ typedef struct {
   int error;
   unsigned char ready;
   unsigned char kill;
+  unsigned char finalizelog;
 } psync_enc_file_extender_t;
 
 typedef struct {
@@ -91,12 +95,12 @@ typedef struct {
     uint64_t writeid;
     time_t staticctime;
   };
+  psync_timer_t writetimer;
   time_t currentsec;
   time_t origctime;
   psync_file_t datafile;
   psync_file_t indexfile;
   uint32_t refcnt;
-  uint32_t condwaiters;
   uint32_t runningreads;
   uint32_t currentspeed;
   uint32_t bytesthissec;
@@ -107,6 +111,11 @@ typedef struct {
   unsigned char encrypted;
   unsigned char throttle;
   unsigned char staticfile;
+#if IS_DEBUG
+  const char *lockfile;
+  const char *lockthread;
+  unsigned long lockline;
+#endif
   /*
    * for non-encrypted files only offsetof(psync_openfile_t, encoder) bytes are allocated
    * keep all fields for encryption after encoder
@@ -117,7 +126,7 @@ typedef struct {
   psync_fast_hash256_ctx loghashctx;
   psync_enc_file_extender_t *extender;
   psync_file_t logfile;
-  uint32_t logoffset;
+  uint32_t logoffset; 
 } psync_openfile_t;
 
 typedef struct {
@@ -128,6 +137,29 @@ typedef struct {
 typedef struct {
   int dummy[0];
 } psync_fs_index_header;
+
+#if IS_DEBUG && (defined(P_OS_LINUX) || defined(P_OS_WINDOWS))
+#define psync_fs_lock_file(of) psync_fs_do_lock_file(of, __FILE__, __LINE__)
+
+static inline void psync_fs_do_lock_file(psync_openfile_t *of, const char *file, unsigned long line){
+  if (unlikely(pthread_mutex_trylock(&of->mutex))){
+    struct timespec tm;
+    psync_nanotime(&tm);
+    tm.tv_sec+=60;
+    if (pthread_mutex_timedlock(&of->mutex, &tm)) {
+      debug(D_BUG, "could not lock mutex of file %s taken in %s:%lu by thread %s, aborting", of->currentname, of->lockfile, of->lockline, of->lockthread);
+      abort();
+    }
+  }
+  of->lockfile=file;
+  of->lockthread=psync_thread_name;
+  of->lockline=line;
+}
+#else
+static inline void psync_fs_lock_file(psync_openfile_t *of){
+  pthread_mutex_lock(&of->mutex);
+}
+#endif
 
 int psync_fs_crypto_err_to_errno(int cryptoerr);
 int psync_fs_update_openfile(uint64_t taskid, uint64_t writeid, psync_fileid_t newfileid, uint64_t hash, uint64_t size, time_t ctime);

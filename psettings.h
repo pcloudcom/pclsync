@@ -32,21 +32,28 @@
 #include "pcompiler.h"
 #include "pcompat.h"
 
-#define PSYNC_LIB_VERSION "1.4.0"
+#define PSYNC_LIB_VERSION "1.5.1"
 
-/*
-#define PSYNC_API_HOST     "api74.pcloud.com"
-#define PSYNC_API_PORT     8398
-#define PSYNC_API_PORT_SSL 8399
-*/
+ /*
+ #define PSYNC_API_HOST     "api74.pcloud.com"
+ #define PSYNC_API_PORT     8398
+ #define PSYNC_API_PORT_SSL 8399
+ */
 
-#define PSYNC_API_HOST     "binapi.pcloud.com"
+//#define PSYNC_API_HOST     "ebinapi71.pcloud.com"
+//#define PSYNC_API_AHOST    "eapi71.pcloud.com"
+
+//#define PSYNC_API_HOST     "ebinapi69.pcloud.com"
+//#define PSYNC_API_AHOST    "eapi69.pcloud.com"
+
+#define PSYNC_API_HOST     "bineapi.pcloud.com"
 #define PSYNC_API_PORT     80
 #define PSYNC_API_PORT_SSL 443
 
-#define PSYNC_API_AHOST     "api.pcloud.com"
+#define PSYNC_API_AHOST     "eapi.pcloud.com"
 #define PSYNC_API_APORT     8398
 #define PSYNC_API_APORT_SSL 8399
+
 
 #define PSYNC_P2P_PORT 42420
 
@@ -56,32 +63,40 @@
 
 #define PSYNC_DIFF_LIMIT   500000
 
+#define PSYNC_RETRY_REQUEST 5
+
 #define PSYNC_SOCK_CONNECT_TIMEOUT 20
-#define PSYNC_SOCK_READ_TIMEOUT    60
+#define PSYNC_SOCK_READ_TIMEOUT    180
 #define PSYNC_SOCK_WRITE_TIMEOUT   120
 
 #define PSYNC_SOCK_TIMEOUT_ON_EXCEPTION 6
 
 #define PSYNC_SOCK_WIN_SNDBUF (4*1024*1024)
 
-#define PSYNC_STACK_SIZE (64*1024)
+#define PSYNC_STACK_SIZE (128*1024)
 
 #define PSYNC_DEBUG_LOG_ALLOC_OVER (8*1024*1024)
+#define PSYNC_DEBUG_LOCK_TIMEOUT 45
 
 #define PSYNC_QUERY_CACHE_SEC 600
 #define PSYNC_QUERY_MAX_CNT 8
 
-#define PSYNC_MAX_PARALLEL_DOWNLOADS 32
+#define PSYNC_DIFF_CHECK_ADAPTER_CHANGE_SEC 5
+
+#define PSYNC_MAX_PARALLEL_DOWNLOADS 1024
 #define PSYNC_MAX_PARALLEL_UPLOADS 32
 #define PSYNC_FSUPLOAD_NUM_TASKS_PER_RUN 128
-#define PSYNC_START_NEW_DOWNLOADS_TRESHOLD (512*1024)
-#define PSYNC_START_NEW_UPLOADS_TRESHOLD (256*1024)
+#define PSYNC_START_NEW_DOWNLOADS_TRESHOLD (4*1024*1024)
+#define PSYNC_START_NEW_UPLOADS_TRESHOLD (512*1024)
 #define PSYNC_MIN_SIZE_FOR_CHECKSUMS (64*1024)
 #define PSYNC_MIN_SIZE_FOR_EXISTS_CHECK (8*1024)
 #define PSYNC_MIN_SIZE_FOR_P2P (32*1024)
+#define PSYNC_MAX_SIZE_FOR_ASYNC_DOWNLOAD (256*1024)
 #define PSYNC_MAX_CHECKSUMS_SIZE (64*1024*1024)
+#define PSYNC_MAX_COPY_FROM_REQ  (32*1024*1024)
+#define PSYNC_MAX_PENDING_UPLOAD_REQS 16
 
-#define PSYNC_COPY_BUFFER_SIZE (64*1024)
+#define PSYNC_COPY_BUFFER_SIZE (256*1024)
 #define PSYNC_RECV_BUFFER_SHAPED (128*1024)
 #define PSYNC_MAX_SPEED_RECV_BUFFER (1024*1024)
 
@@ -101,7 +116,11 @@
 #define PSYNC_LOCALSCAN_SLEEPSEC_PER_SCAN       10
 #define PSYNC_LOCALSCAN_RESCAN_INTERVAL         10
 #define PSYNC_LOCALSCAN_RESCAN_NOTIFY_SUPPORTED 3600
+#define PSYNC_LOCALSCAN_MIN_INTERVAL            60
+#define PSYNC_MIN_INTERVAL_RECALC_DOWNLOAD      2
 #define PSYNC_MIN_INTERVAL_RECALC_UPLOAD        5
+#define PSYNC_UPLOAD_NOWRITE_TIMER              30
+#define PSYNC_LINKS_REFRESH_INTERVAL            10
 
 #define PSYNC_APIPOOL_MAXIDLE    24
 #define PSYNC_APIPOOL_MAXACTIVE  36
@@ -127,24 +146,36 @@
 #define PSYNC_DEFAULT_CACHE_FOLDER "Cache"
 #define PSYNC_DEFAULT_READ_CACHE_FILE "cached"
 
+#if defined(P_OS_MACOSX)
+#define PSYNC_DEFAULT_FS_FOLDER "pCloud Drive"
+#else
 #define PSYNC_DEFAULT_FS_FOLDER "pCloudDrive"
+#endif
 
 #define PSYNC_DEFAULT_POSIX_FOLDER_MODE 0755
 #define PSYNC_DEFAULT_POSIX_FILE_MODE 0644
 
 #define PSYNC_APPEND_PARTIAL_FILES ".part"
 
+#define PSYNC_REPLACE_INV_CH_IN_FILENAMES '_'
+
 /* in milliseconds */
 #define PSYNC_SLEEP_BEFORE_RECONNECT   5000
 #define PSYNC_SLEEP_ON_DISK_FULL       10000
-#define PSYNC_SLEEP_ON_FAILED_DOWNLOAD 200
-#define PSYNC_SLEEP_ON_FAILED_UPLOAD   200
+#define PSYNC_SLEEP_ON_FAILED_DOWNLOAD 2000
+#define PSYNC_SLEEP_ON_FAILED_UPLOAD   2000
 #define PSYNC_SLEEP_AUTO_SHAPER        100
-#define PSYNC_SLEEP_ON_LOCKED_FILE     10000
+#define PSYNC_SLEEP_ON_LOCKED_FILE     2000
 #define PSYNC_SLEEP_ON_OS_LOCK         5000
+#define PSYNC_SLEEP_FILE_CHANGE        2000
 
 #define PSYNC_P2P_INITIAL_TIMEOUT      600
 #define PSYNC_P2P_SLEEP_WAIT_DOWNLOAD  20000
+
+#define PSYNC_ASYNC_THREAD_TIMEOUT     (15*60*1000)
+#define PSYNC_ASYNC_GROUP_REQUESTS_FOR 60
+
+#define PSYNC_ASYNC_MAX_GROUPED_REQUESTS 128
 
 #define PSYNC_CRYPTO_DEFAULT_STOP_ON_SLEEP 0
 
@@ -221,6 +252,7 @@
 #define PSYNC_MIN_LOCAL_FREE_SPACE ((uint64_t)2048*1024*1024)
 #define PSYNC_P2P_SYNC_DEFAULT 1
 #define PSYNC_AUTOSTARTFS_DEFAULT 1
+#define PSYNC_LOCATIONID_DEFAULT 2
 #define PSYNC_IGNORE_PATTERNS_DEFAULT ".DS_Store;\
 .DS_Store?;\
 .AppleDouble;\
@@ -237,7 +269,28 @@ hiberfil.sys;\
 pagefile.sys;\
 $RECYCLE.BIN;\
 *.part;\
-.pcloud"
+.pcloud;"
+
+#if defined (P_OS_WINDOWS)
+#define PSYNC_IGNORE_PATHS_DEFAULT "C:\\$Recycle.Bin;C:\\$WinREAgent;C:\\Windows;C:\\Program Files;C:\\Program Files (x86);"
+#endif
+
+#if defined (P_OS_MACOSX)
+#define PSYNC_IGNORE_PATHS_DEFAULT "/Applications;/Library;/private;/System;/bin;/etc;/sbin;/usr;"
+#endif
+
+#if defined (P_OS_LINUX)
+#define PSYNC_IGNORE_PATHS_DEFAULT "/Applications;/Library;/private;/System;/bin;/dev;/etc;/net;/sbin;/usr;/Developer;"
+#endif
+
+/* Defaults for business account settings */
+#define PSYNC_BACC_COMPANYNAME      "Not set"
+#define PSYNC_BACC_OWNERUSERID      0
+#define PSYNC_BACC_OWNERFIRSTNAME   "Not set"
+#define PSYNC_BACC_OWNERLASTNAME    "Not set"
+#define PSYNC_BACC_OWNEREMAIL       "Not set"
+#define PSYNC_BACC_OWNER_CRYPTOSETUP 0
+#define PSYNC_BACC_V2               0
 
 #define _PS(s) PSYNC_SETTING_##s
 
@@ -253,6 +306,17 @@ $RECYCLE.BIN;\
 #define PSYNC_SETTING_fscachesize       9
 #define PSYNC_SETTING_fscachepath      10
 #define PSYNC_SETTING_sleepstopcrypto  11
+#define PSYNC_SETTING_companyname      12
+#define PSYNC_SETTING_owneruserid      13
+#define PSYNC_SETTING_ownerfirstname   14
+#define PSYNC_SETTING_ownerlastname    15
+#define PSYNC_SETTING_owneremail       16
+#define PSYNC_SETTING_owner_cryptosetup 17
+#define PSYNC_SETTING_cryptov2isactive 18
+#define PSYNC_SETTING_hasactivesubscription 19
+#define PSYNC_SETTING_api_server        20
+#define PSYNC_SETTING_location_id        21
+#define PSYNC_SETTING_ignorepaths        22
 
 typedef int psync_settingid_t;
 
@@ -262,7 +326,7 @@ void psync_settings_init();
 
 void psync_settings_reset();
 
-psync_settingid_t psync_setting_getid(const char *name) PSYNC_CONST PSYNC_NONNULL(1);
+psync_settingid_t psync_setting_getid(const char* name) PSYNC_CONST PSYNC_NONNULL(1);
 
 int psync_setting_get_bool(psync_settingid_t settingid) PSYNC_PURE;
 int psync_setting_set_bool(psync_settingid_t settingid, int value);
@@ -270,7 +334,8 @@ int64_t psync_setting_get_int(psync_settingid_t settingid) PSYNC_PURE;
 int psync_setting_set_int(psync_settingid_t settingid, int64_t value);
 uint64_t psync_setting_get_uint(psync_settingid_t settingid) PSYNC_PURE;
 int psync_setting_set_uint(psync_settingid_t settingid, uint64_t value);
-const char *psync_setting_get_string(psync_settingid_t settingid) PSYNC_PURE;
-int psync_setting_set_string(psync_settingid_t settingid, const char *value);
+const char* psync_setting_get_string(psync_settingid_t settingid) PSYNC_PURE;
+int psync_setting_set_string(psync_settingid_t settingid, const char* value);
+int psync_setting_reset(psync_settingid_t settingid);
 
 #endif

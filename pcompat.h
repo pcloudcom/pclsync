@@ -100,6 +100,11 @@
 
 #endif
 
+#ifdef P_ELECTRON
+#undef P_OS_ID
+#define P_OS_ID 9
+#endif
+
 #define _FILE_OFFSET_BITS 64
 
 #include <sys/types.h>
@@ -121,7 +126,7 @@ typedef unsigned long psync_uint_t;
 
 
 #define psync_32to64(hi, lo) ((((uint64_t)(hi))<<32)+(lo))
-#define psync_bool_to_zero(x) ((!!(x))-1)
+#define psync_bool_to_zero(x) (((int)(!!(x)))-1)
 
 #define NTO_STR(s) TO_STR(s)
 #define TO_STR(s) #s
@@ -145,10 +150,12 @@ typedef unsigned long psync_uint_t;
 #define psync_stat_isfolder(s) S_ISDIR((s)->st_mode)
 #define psync_stat_size(s) ((s)->st_size)
 #ifdef _DARWIN_FEATURE_64_BIT_INODE
-#define psync_stat_ctime(s) ((s)->st_birthtime)
+#define psync_stat_birthtime(s) ((s)->st_birthtime)
+#define PSYNC_HAS_BIRTHTIME
 #else
-#define psync_stat_ctime(s) ((s)->st_ctime)
+#define psync_stat_birthtime(s) ((s)->st_mtime)
 #endif
+#define psync_stat_ctime(s) ((s)->st_ctime)
 #define psync_stat_mtime(s) ((s)->st_mtime)
 
 #if defined(st_mtime)
@@ -170,6 +177,12 @@ typedef unsigned long psync_uint_t;
 #define psync_stat_device(s) ((s)->st_dev>>24)
 #else
 #define psync_stat_device(s) ((s)->st_dev)
+#endif
+#define psync_stat_device_full(s) ((s)->st_dev)
+#if defined(P_OS_MACOSX)
+#define psync_deviceid_short(deviceid) (deviceid>>24)
+#else
+#define psync_deviceid_short(deviceid) (deviceid)
 #endif
 
 typedef struct stat psync_stat_t;
@@ -247,7 +260,10 @@ typedef int psync_file_t;
 
 #define psync_def_var_arr(name, type, size) type *name=(type *)alloca(sizeof(type)*(size))
 #define atoll _atoi64
+#if _MSC_VER < 1900
 #define snprintf _snprintf
+#endif
+//#define snprintf _snprintf
 
 #endif
 
@@ -266,10 +282,14 @@ int psync_stat(const char *path, psync_stat_t *st);
 #define psync_stat_size(s) psync_32to64((s)->nFileSizeHigh, (s)->nFileSizeLow)
 #define psync_stat_ctime(s) psync_filetime_to_timet(&(s)->ftCreationTime)
 #define psync_stat_mtime(s) psync_filetime_to_timet(&(s)->ftLastWriteTime)
+#define psync_stat_birthtime(s) psync_filetime_to_timet(&(s)->ftCreationTime)
+#define PSYNC_HAS_BIRTHTIME
 #define psync_stat_mtime_native(s) psync_32to64((s)->ftLastWriteTime.dwHighDateTime, (s)->ftLastWriteTime.dwLowDateTime)
 #define psync_mtime_native_to_mtime(n) psync_filetime64_to_timet(n)
 #define psync_stat_inode(s) psync_32to64((s)->nFileIndexHigh, (s)->nFileIndexLow)
 #define psync_stat_device(s) ((s)->dwVolumeSerialNumber)
+#define psync_stat_device_full(s) psync_stat_device(s)
+#define psync_deviceid_short(deviceid) (deviceid)
 
 #define psync_sock_err() WSAGetLastError()
 #define psync_sock_set_err(e) WSASetLastError(e)
@@ -341,6 +361,7 @@ typedef struct {
   psync_socket_buffer *buffer;
   psync_socket_t sock;
   int pending;
+  uint32_t misc;
 } psync_socket;
 
 typedef uint64_t psync_inode_t;
@@ -352,10 +373,16 @@ typedef struct {
   psync_stat_t stat;
 } psync_pstat;
 
+#if defined(P_OS_MACOSX)
+typedef psync_pstat psync_pstat_fast;
+#define psync_stat_fast_isfolder(a) psync_stat_isfolder(&(a)->stat)
+#else
 typedef struct {
   const char *name;
   uint8_t isfolder;
 } psync_pstat_fast;
+#define psync_stat_fast_isfolder(a) ((a)->isfolder)
+#endif
 
 typedef struct {
   struct sockaddr_storage address;
@@ -401,6 +428,8 @@ typedef void (*psync_thread_start1)(void *);
 
 extern PSYNC_THREAD const char *psync_thread_name;
 
+extern const unsigned char psync_invalid_filename_chars[];
+
 void psync_compat_init();
 int psync_user_is_admin();
 int psync_stat_mode_ok(psync_stat_t *buf, unsigned int bits) PSYNC_PURE;
@@ -411,9 +440,11 @@ char *psync_get_default_database_path();
 char *psync_get_home_dir();
 void psync_run_thread(const char *name, psync_thread_start0 run);
 void psync_run_thread1(const char *name, psync_thread_start1 run, void *ptr);
+void psync_milisleep_nosqlcheck(uint64_t millisec);
 void psync_milisleep(uint64_t millisec);
 time_t psync_time();
 void psync_nanotime(struct timespec *tm);
+uint64_t psync_millitime();
 void psync_yield_cpu();
 
 void psync_get_random_seed(unsigned char *seed, const void *addent, size_t aelen, int fast);
@@ -426,8 +457,8 @@ void psync_socket_set_write_buffered(psync_socket *sock);
 void psync_socket_set_write_buffered_thread(psync_socket *sock);
 void psync_socket_clear_write_buffered(psync_socket *sock);
 void psync_socket_clear_write_buffered_thread(psync_socket *sock);
-int psync_socket_set_recvbuf(psync_socket *sock, uint32_t bufsize);
-int psync_socket_set_sendbuf(psync_socket *sock, uint32_t bufsize);
+int psync_socket_set_recvbuf(psync_socket *sock, int bufsize);
+int psync_socket_set_sendbuf(psync_socket *sock, int bufsize);
 int psync_socket_isssl(psync_socket *sock) PSYNC_PURE;
 int psync_socket_pendingdata(psync_socket *sock);
 int psync_socket_pendingdata_buf(psync_socket *sock);
@@ -453,6 +484,10 @@ int psync_pipe_close(psync_socket_t pfd);
 int psync_pipe_read(psync_socket_t pfd, void *buff, int num);
 int psync_pipe_write(psync_socket_t pfd, const void *buff, int num);
 
+int psync_socket_pair(psync_socket_t sfd[2]);
+int psync_wait_socket_write_timeout(psync_socket_t sock);
+int psync_wait_socket_read_timeout(psync_socket_t sock);
+
 int psync_socket_is_broken(psync_socket_t sock);
 int psync_select_in(psync_socket_t *sockets, int cnt, int64_t timeoutmillisec);
 
@@ -475,6 +510,8 @@ int psync_file_schedulesync(psync_file_t fd);
 int psync_folder_sync(const char *path);
 psync_file_t psync_file_dup(psync_file_t fd);
 int psync_file_set_creation(psync_file_t fd, time_t ctime);
+int psync_set_crtime_mtime(const char *path, time_t crtime, time_t mtime);
+int psync_set_crtime_mtime_by_fd(psync_file_t fd, const char *path, time_t crtime, time_t mtime);
 int psync_file_preread(psync_file_t fd, uint64_t offset, size_t count);
 int psync_file_readahead(psync_file_t fd, uint64_t offset, size_t count);
 ssize_t psync_file_read(psync_file_t fd, void *buf, size_t count);
@@ -486,6 +523,10 @@ int psync_file_truncate(psync_file_t fd);
 int64_t psync_file_size(psync_file_t fd);
 
 void psync_set_software_name(const char *snm);
+void psync_set_os_name(const char *osnm);
+char *psync_deviceos();
+const char *psync_appname();
+char *psync_device_string();
 char *psync_deviceid();
 
 #if defined(P_OS_WINDOWS) && !defined(gmtime_r)
@@ -505,5 +546,7 @@ int psync_mlock(void *ptr, size_t size);
 int psync_munlock(void *ptr, size_t size);
 
 int psync_get_page_size();
+
+void psync_rebuild_icons();
 
 #endif

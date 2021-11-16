@@ -1,7 +1,7 @@
 /* Copyright (c) 2013-2014 Anton Titov.
  * Copyright (c) 2013-2014 pCloud Ltd.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright
@@ -12,7 +12,7 @@
  *     * Neither the name of pCloud Ltd nor the
  *       names of its contributors may be used to endorse or promote products
  *       derived from this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -32,6 +32,15 @@
 #include "psynclib.h"
 #include "plist.h"
 #include "papi.h"
+
+#define senddebug(str, ...) do {psync_send_debug(0, __FILE__, __FUNCTION__, __LINE__, str, __VA_ARGS__);} while (0)
+#define sendtdebug(str, ...) do {psync_send_debug(1, __FILE__, __FUNCTION__, __LINE__, str, __VA_ARGS__);} while (0)
+#define sendassert(cond) do {if (unlikely(!(cond))) { senddebug("assertion %s failed", TO_STR(cond));}} while (0)
+#define sendtassert(cond) do {if (unlikely(!(cond))) { sendtdebug("assertion %s failed", TO_STR(cond));}} while (0)
+
+#define psync_api_run_command(cmd, params) psync_do_api_run_command(cmd, strlen(cmd), params, sizeof(params)/sizeof(binparam))
+
+#define psync_run_command(cmd, params, err) psync_do_run_command_res(cmd, strlen(cmd), params, sizeof(params)/sizeof(binparam), err)
 
 #define PSYNC_NET_OK        0
 #define PSYNC_NET_PERMFAIL -1
@@ -82,18 +91,23 @@ typedef struct {
   uint32_t id;
 } psync_upload_range_list_t;
 
-typedef struct {
-  psync_list list;
-  char filename[];
-} psync_file_lock_t;
+struct _psync_file_lock_t;
+
+typedef struct _psync_file_lock_t psync_file_lock_t;
+
+extern char apiserver[64];
 
 void psync_netlibs_init();
+
+void psync_apipool_set_server(const char *binapi);
+void psync_apiserver_init();
 
 psync_socket *psync_apipool_get();
 psync_socket *psync_apipool_get_from_cache();
 void psync_apipool_prepare();
 void psync_apipool_release(psync_socket *api);
 void psync_apipool_release_bad(psync_socket *api);
+binresult *psync_do_api_run_command(const char *command, size_t cmdlen, const binparam *params, size_t paramcnt);
 
 int psync_rmdir_with_trashes(const char *path);
 int psync_rmdir_recursive(const char *path);
@@ -108,17 +122,19 @@ int psync_copy_local_file_if_checksum_matches(const char *source, const char *de
 int psync_file_writeall_checkoverquota(psync_file_t fd, const void *buf, size_t count);
 
 int psync_set_default_sendbuf(psync_socket *sock);
+void psync_account_downloaded_bytes(int unsigned bytes);
 int psync_socket_readall_download(psync_socket *sock, void *buff, int num);
 int psync_socket_readall_download_thread(psync_socket *sock, void *buff, int num);
-int psync_socket_writeall_upload(psync_socket *sock, const void *buff, int num);
+psync_int_t psync_socket_writeall_upload(psync_socket *sock, const void *buff, int num);
 
-psync_http_socket *psync_http_connect(const char *host, const char *path, uint64_t from, uint64_t to);
+psync_http_socket *psync_http_connect(const char *host, const char *path, uint64_t from, uint64_t to, const char *addhdr);
 void psync_http_close(psync_http_socket *http);
 int psync_http_readall(psync_http_socket *http, void *buff, int num);
 void psync_http_connect_and_cache_host(const char *host);
 psync_http_socket *psync_http_connect_multihost(const binresult *hosts, const char **host);
 psync_http_socket *psync_http_connect_multihost_from_cache(const binresult *hosts, const char **host);
-int psync_http_request(psync_http_socket *sock, const char *host, const char *path, uint64_t from, uint64_t to);
+int psync_http_request_range_additional(psync_http_socket *sock, const char *host, const char *path, uint64_t from, uint64_t to, const char *addhdr);
+int psync_http_request(psync_http_socket *sock, const char *host, const char *path, uint64_t from, uint64_t to, const char *addhdr);
 int psync_http_next_request(psync_http_socket *sock);
 int psync_http_request_readall(psync_http_socket *http, void *buff, int num);
 
@@ -136,5 +152,10 @@ void psync_unlock_file(psync_file_lock_t *lock);
 int psync_get_upload_checksum(psync_uploadid_t uploadid, unsigned char *uhash, uint64_t *usize);
 
 void psync_process_api_error(uint64_t result);
+
+int psync_send_debug(int thread, const char *file, const char *function, int unsigned line, const char *fmt, ...)
+    PSYNC_COLD PSYNC_FORMAT(printf, 5, 6)  PSYNC_NONNULL(5);
+
+int psync_do_run_command_res(const char *cmd, size_t cmdlen, const binparam *params, size_t paramscnt, char **err);
 
 #endif

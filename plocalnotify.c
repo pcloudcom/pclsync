@@ -1,7 +1,7 @@
 /* Copyright (c) 2014 Anton Titov.
  * Copyright (c) 2014 pCloud Ltd.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright
@@ -12,7 +12,7 @@
  *     * Neither the name of pCloud Ltd nor the
  *       names of its contributors may be used to endorse or promote products
  *       derived from this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -192,7 +192,7 @@ static void process_pipe(){
     debug(D_ERROR, "invalid message type %u", (unsigned int)msg.type);
 }
 
-static void process_notification(localnotify_dir *dir){
+static uint32_t process_notification(localnotify_dir *dir){
   ssize_t rd, off;
   struct inotify_event ev;
   localnotify_watch *wch, **pwch;
@@ -229,28 +229,40 @@ static void process_notification(localnotify_dir *dir){
         }
         else{
           pwch=&wch->next;
-          wch=wch->next;      
+          wch=wch->next;
         }
       }
     }
     off+=offsetof(struct inotify_event, name)+ev.len;
   }
   if (rd>0)
-    psync_wake_localscan();
+    return 1;
+  else
+    return 0;
 }
 
 static void psync_localnotify_thread(){
   struct epoll_event ev;
+  uint32_t ncnt;
+  int cnt;
+  ncnt=0;
   while (psync_do_run){
-    if (epoll_wait(epoll_fd, &ev, 1, -1)!=1){
-      if (errno!=EINTR)
-        debug(D_WARNING, "epoll_wait failed errno %d", errno);
-      continue;
+    if ((cnt=epoll_wait(epoll_fd, &ev, 1, 1000))!=1){
+      if (cnt==-1) {
+        if (errno!=EINTR)
+          debug(D_WARNING, "epoll_wait failed errno %d", errno);
+      }
+      else if (cnt==0 && ncnt) {
+        ncnt=0;
+        psync_wake_localscan();
+      }
     }
-    if (ev.data.ptr)
-      process_notification((localnotify_dir *)ev.data.ptr);
-    else
-      process_pipe();
+    else {
+      if (ev.data.ptr)
+        ncnt+=process_notification((localnotify_dir *)ev.data.ptr);
+      else
+        process_pipe();
+    }
   }
 }
 
@@ -336,7 +348,8 @@ static void add_syncid(psync_syncid_t syncid){
     debug(D_ERROR, "could not find syncfolder with id %u", (unsigned int)syncid);
     return;
   }
-  h=FindFirstChangeNotificationW(path, TRUE, FILE_NOTIFY_CHANGE_FILE_NAME|FILE_NOTIFY_CHANGE_DIR_NAME|FILE_NOTIFY_CHANGE_SIZE|FILE_NOTIFY_CHANGE_LAST_WRITE);
+  h=FindFirstChangeNotificationW(path, TRUE, FILE_NOTIFY_CHANGE_FILE_NAME|FILE_NOTIFY_CHANGE_DIR_NAME|
+                                             FILE_NOTIFY_CHANGE_SIZE|FILE_NOTIFY_CHANGE_LAST_WRITE|FILE_NOTIFY_CHANGE_ATTRIBUTES);
   psync_free(path);
   if (unlikely(h==INVALID_HANDLE_VALUE)){
     debug(D_ERROR, "FindFirstChangeNotificationW failed");
@@ -397,7 +410,7 @@ static void psync_localnotify_thread(){
 
 int psync_localnotify_init(){
   DWORD state = PIPE_NOWAIT;
-   
+
   if (!CreatePipe(&pipe_read, &pipe_write, NULL, 0))
     return -1;
 
@@ -529,7 +542,7 @@ void psync_localnotify_del_sync(psync_syncid_t syncid){
 
 #elif defined(P_OS_BSD)
 
-/* this implementation only monitors folder changes - it does not catch 
+/* this implementation only monitors folder changes - it does not catch
  * file changes (however it does catch deleted and created files).
  */
 

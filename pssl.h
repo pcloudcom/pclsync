@@ -1,7 +1,7 @@
 /* Copyright (c) 2013-2014 Anton Titov.
  * Copyright (c) 2013-2014 pCloud Ltd.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright
@@ -12,7 +12,7 @@
  *     * Neither the name of pCloud Ltd nor the
  *       names of its contributors may be used to endorse or promote products
  *       derived from this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -62,12 +62,16 @@ typedef struct {
 
 typedef psync_encrypted_data_t psync_encrypted_symmetric_key_t;
 typedef psync_encrypted_data_t psync_binary_rsa_key_t;
+typedef psync_encrypted_data_t psync_rsa_signature_t;
 
 #define PSYNC_INVALID_ENC_SYM_KEY NULL
 #define PSYNC_INVALID_ENCODER NULL
 #define PSYNC_INVALID_BIN_RSA NULL
 
 #define psync_ssl_alloc_binary_rsa psync_ssl_alloc_encrypted_symmetric_key
+
+//Lock used to serialize access to RSA decrypt key function
+static pthread_mutex_t rsa_decr_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int psync_ssl_init();
 void psync_ssl_memclean(void *ptr, size_t len);
@@ -97,6 +101,7 @@ psync_rsa_privatekey_t psync_ssl_rsa_binary_to_private(psync_binary_rsa_key_t bi
 void psync_ssl_rsa_free_binary(psync_binary_rsa_key_t bin);
 
 psync_symmetric_key_t psync_ssl_gen_symmetric_key_from_pass(const char *password, size_t keylen, const unsigned char *salt, size_t saltlen, size_t iterations);
+char *psync_ssl_derive_password_from_passphrase(const char *username, const char *passphrase);
 psync_encrypted_symmetric_key_t psync_ssl_alloc_encrypted_symmetric_key(size_t len);
 psync_encrypted_symmetric_key_t psync_ssl_copy_encrypted_symmetric_key(psync_encrypted_symmetric_key_t src);
 void psync_ssl_free_symmetric_key(psync_symmetric_key_t key);
@@ -110,5 +115,7 @@ psync_aes256_encoder psync_ssl_aes256_create_encoder(psync_symmetric_key_t key);
 void psync_ssl_aes256_free_encoder(psync_aes256_encoder aes);
 psync_aes256_encoder psync_ssl_aes256_create_decoder(psync_symmetric_key_t key);
 void psync_ssl_aes256_free_decoder(psync_aes256_encoder aes);
+psync_rsa_signature_t psync_ssl_rsa_sign_sha256_hash(psync_rsa_privatekey_t rsa, const unsigned char *data);
 
+psync_symmetric_key_t psync_ssl_rsa_decrypt_symm_key_lock(psync_rsa_privatekey_t* rsa, const psync_encrypted_symmetric_key_t* enckey);
 #endif

@@ -1,7 +1,7 @@
 /* Copyright (c) 2013-2014 Anton Titov.
  * Copyright (c) 2013-2014 pCloud Ltd.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright
@@ -12,7 +12,7 @@
  *     * Neither the name of pCloud Ltd nor the
  *       names of its contributors may be used to endorse or promote products
  *       derived from this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -31,6 +31,7 @@
 #include "plibs.h"
 #include "plist.h"
 #include "pfolder.h"
+#include "prunratelimit.h"
 
 #define MAX_STATUS_STR_LEN 64
 #define DONT_SHOW_TIME_IF_SEC_OVER (2*86400)
@@ -45,6 +46,7 @@ static pthread_mutex_t eventmutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t eventcond=PTHREAD_COND_INITIALIZER;
 static psync_list eventlist;
 static int eventthreadrunning=0;
+static pstatus_t status_old={ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 typedef struct {
   psync_list list;
@@ -170,13 +172,20 @@ static char *fill_formatted_time(char *str, uint64_t totalsec){
   return str;
 }
 
+static uint64_t sub_no_underf(uint64_t a, uint64_t b){
+  if (likely(b<a))
+    return a-b;
+  else
+    return 0;
+}
+
 static void status_fill_formatted_str(pstatus_t *status, char *downloadstr, char *uploadstr){
   char *up, *dw;
   uint64_t remsec;
   uint32_t speed;
   dw=downloadstr;
   up=uploadstr;
-  
+
   if (status->filestodownload){
     speed=status->downloadspeed;
     if (status->status==PSTATUS_PAUSED || status->status==PSTATUS_STOPPED || status->localisfull || speed==0){
@@ -186,12 +195,12 @@ static void status_fill_formatted_str(pstatus_t *status, char *downloadstr, char
         dw=cat_const(dw, "Stopped. ");
       else if (status->localisfull)
         dw=cat_const(dw, "Disk full. ");
-      dw=fill_remaining(dw, status->filestodownload, status->bytestodownload-status->bytesdownloaded);
+      dw=fill_remaining(dw, status->filestodownload, sub_no_underf(status->bytestodownload, status->bytesdownloaded));
     }
     else{
       dw=fill_formatted_bytes(dw, speed);
       dw=cat_const(dw, "/sec, ");
-      dw=fill_remaining(dw, status->filestodownload, status->bytestodownload-status->bytesdownloaded);
+      dw=fill_remaining(dw, status->filestodownload, sub_no_underf(status->bytestodownload, status->bytesdownloaded));
       remsec=(status->bytestodownload-status->bytesdownloaded)/speed;
       if (remsec<DONT_SHOW_TIME_IF_SEC_OVER || speed>=DONT_SHOW_TIME_IF_SPEED_BELOW){
         *dw++=' ';
@@ -201,7 +210,7 @@ static void status_fill_formatted_str(pstatus_t *status, char *downloadstr, char
   }
   else
     dw=cat_const(dw, "Everything Downloaded");
-  
+
   if (status->filestoupload){
     speed=status->uploadspeed;
     if (status->status==PSTATUS_PAUSED || status->status==PSTATUS_STOPPED || status->remoteisfull || speed==0){
@@ -211,12 +220,12 @@ static void status_fill_formatted_str(pstatus_t *status, char *downloadstr, char
         up=cat_const(up, "Stopped. ");
       else if (status->remoteisfull)
         up=cat_const(up, "Account full. ");
-      up=fill_remaining(up, status->filestoupload, status->bytestoupload-status->bytesuploaded);
+      up=fill_remaining(up, status->filestoupload, sub_no_underf(status->bytestoupload, status->bytesuploaded));
     }
     else{
       up=fill_formatted_bytes(up, speed);
       up=cat_const(up, "/sec, ");
-      up=fill_remaining(up, status->filestoupload, status->bytestoupload-status->bytesuploaded);
+      up=fill_remaining(up, status->filestoupload, sub_no_underf(status->bytestoupload, status->bytesuploaded));
       remsec=(status->bytestoupload-status->bytesuploaded)/speed;
       if (remsec<DONT_SHOW_TIME_IF_SEC_OVER || speed>=DONT_SHOW_TIME_IF_SPEED_BELOW){
         *up++=' ';
@@ -226,7 +235,7 @@ static void status_fill_formatted_str(pstatus_t *status, char *downloadstr, char
   }
   else
     up=cat_const(up, "Everything Uploaded");
-  
+
   assert(dw<downloadstr+MAX_STATUS_STR_LEN);
   assert(up<uploadstr+MAX_STATUS_STR_LEN);
   *dw=0;
@@ -236,13 +245,13 @@ static void status_fill_formatted_str(pstatus_t *status, char *downloadstr, char
 }
 
 void psync_callbacks_get_status(pstatus_t *status){
-  char downloadstr[MAX_STATUS_STR_LEN], uploadstr[MAX_STATUS_STR_LEN];
+  static char downloadstr[MAX_STATUS_STR_LEN], uploadstr[MAX_STATUS_STR_LEN];
   memcpy(status, &psync_status, sizeof(pstatus_t));
   status_fill_formatted_str(status, downloadstr, uploadstr);
 }
 
 static void status_change_thread(void *ptr){
-  static char downloadstr[MAX_STATUS_STR_LEN], uploadstr[MAX_STATUS_STR_LEN];
+  char downloadstr[MAX_STATUS_STR_LEN], uploadstr[MAX_STATUS_STR_LEN];
   pstatus_change_callback_t callback=(pstatus_change_callback_t)ptr;
   while (1){
     // Maximum 2 updates/sec
@@ -253,10 +262,27 @@ static void status_change_thread(void *ptr){
       pthread_cond_wait(&statuscond, &statusmutex);
     }
     statuschanges=0;
+    if (((status_old.filestodownload > 0 ) && (psync_status.filestodownload == 0)) ||
+        ((psync_status.filestodownload > 0 ) && (status_old.filestodownload == 0)) ||
+        ((status_old.filestoupload > 0 ) && (psync_status.filestoupload == 0)) ||
+        ((psync_status.filestoupload > 0 ) && (status_old.filestoupload == 0)) ||
+        ((psync_status.localisfull != status_old.localisfull)) ||
+        ((psync_status.remoteisfull != status_old.remoteisfull)) ||
+        ((psync_status.status != status_old.status) && (
+          (psync_status.status == PSTATUS_STOPPED) ||
+          (psync_status.status == PSTATUS_PAUSED) ||
+          (psync_status.status == PSTATUS_OFFLINE) ||
+          (status_old.status == PSTATUS_STOPPED) ||
+          (status_old.status == PSTATUS_PAUSED) ||
+          (status_old.status == PSTATUS_OFFLINE) ) )
+    )
+      psync_run_ratelimited("rebuild icons", psync_rebuild_icons, 1, 1);
+    status_old = psync_status;
     pthread_mutex_unlock(&statusmutex);
     if (!psync_do_run)
       break;
     status_fill_formatted_str(&psync_status, downloadstr, uploadstr);
+    debug(D_NOTICE, "sending status update, dwlstr: %s, uplstr: %s", psync_status.downloadstr, psync_status.uploadstr);
     callback(&psync_status);
   }
 }
@@ -282,17 +308,25 @@ void psync_send_status_update(){
 static void event_thread(void *ptr){
   pevent_callback_t callback=(pevent_callback_t)ptr;
   event_list_t *event;
+
   while (1){
     pthread_mutex_lock(&eventmutex);
+
     while (psync_list_isempty(&eventlist))
       pthread_cond_wait(&eventcond, &eventmutex);
+
     event=psync_list_remove_head_element(&eventlist, event_list_t, list);
+
     pthread_mutex_unlock(&eventmutex);
+
     if (!psync_do_run)
       break;
+
     callback(event->event, event->data);
+
     if (event->freedata)
       psync_free(event->data.ptr);
+
     psync_free(event);
   }
 }
@@ -367,10 +401,12 @@ void psync_send_event_by_path(psync_eventtype_t eventid, psync_syncid_t syncid, 
 void psync_send_eventid(psync_eventtype_t eventid){
   if (eventthreadrunning){
     event_list_t *event;
+
     event=psync_new(event_list_t);
     event->data.ptr=NULL;
     event->event=eventid;
-    event->freedata=0;    
+    event->freedata=0;
+
     pthread_mutex_lock(&eventmutex);
     psync_list_add_tail(&eventlist, &event->list);
     pthread_cond_signal(&eventcond);
@@ -381,10 +417,12 @@ void psync_send_eventid(psync_eventtype_t eventid){
 void psync_send_eventdata(psync_eventtype_t eventid, void *eventdata){
   if (eventthreadrunning){
     event_list_t *event;
+
     event=psync_new(event_list_t);
     event->data.ptr=eventdata;
     event->event=eventid;
     event->freedata=1;
+
     pthread_mutex_lock(&eventmutex);
     psync_list_add_tail(&eventlist, &event->list);
     pthread_cond_signal(&eventcond);
@@ -393,3 +431,43 @@ void psync_send_eventdata(psync_eventtype_t eventid, void *eventdata){
   else
     psync_free(eventdata);
 }
+/**********************************************************************************************/
+data_event_callback data_event_fptr = NULL;
+
+void psync_init_data_event(void *ptr) {
+  data_event_fptr = (data_event_callback*)ptr;
+  debug(D_NOTICE, "Data event handler set.");
+}
+/**********************************************************************************************/
+void data_event_thread(void* ptr) {
+  event_data_struct* data = (event_data_struct*)ptr;
+
+  debug(D_NOTICE, "Sending data event Event id: [%d] Str1: [%s], Str1: [%s], Uint1:[%lu] Uint2:[%lu]", data->eventid, data->str1, data->str2, data->uint1, data->uint2);
+
+  data_event_fptr(data->eventid, data->str1, data->str2, data->uint1, data->uint2);
+
+  psync_free(ptr);
+}
+/**********************************************************************************************/
+void psync_send_data_event(event_data_struct* data) {
+  event_data_struct *event_data;
+
+  if (data_event_fptr) {
+    event_data = psync_new(event_data_struct);
+    event_data->eventid = data->eventid;
+    event_data->uint1 = data->uint1;
+    event_data->uint2 = data->uint2;
+    event_data->str1 = strdup(data->str1);
+    event_data->str2 = strdup(data->str2);
+
+    psync_run_thread1("Data Event", data_event_thread, event_data);
+  }
+  else {
+    debug(D_ERROR, "Data event callback function not set.");
+  }
+}
+/**********************************************************************************************/
+void psync_data_event_test(int eventid, char* str1, char* str2, uint64_t uint1, uint64_t uint2) {
+  debug(D_NOTICE, "Test Data event callback. eventid [%d]. String1: [%s], String2: [%s], uInt1: [%ul] uInt2: [%ul]", eventid, str1, str2, uint1, uint2);
+}
+/**********************************************************************************************/

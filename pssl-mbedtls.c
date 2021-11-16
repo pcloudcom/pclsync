@@ -35,10 +35,17 @@
 #include "ptimer.h"
 #include "pmemlock.h"
 #include <pthread.h>
+#include <ctype.h>
 #include <polarssl/ctr_drbg.h>
 #include <polarssl/entropy.h>
 #include <polarssl/ssl.h>
 #include <polarssl/pkcs5.h>
+#include <polarssl/debug.h>
+
+#if defined(PSYNC_AES_HW_MSC)
+#include <intrin.h>
+#include <wmmintrin.h>
+#endif
 
 static const int psync_mbed_ciphersuite[]={
   TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
@@ -78,6 +85,18 @@ PSYNC_THREAD int psync_ssl_errno;
 #if defined(PSYNC_AES_HW)
 int psync_ssl_hw_aes;
 #endif
+
+static psync_ssl_debug_callback_t debug_cb=NULL;
+static void *debug_ctx=NULL;
+
+void psync_ssl_set_log_threshold(int threshold){
+  debug_set_threshold(threshold);
+}
+
+void psync_ssl_set_debug_callback(psync_ssl_debug_callback_t cb, void *ctx){
+  debug_cb=cb;
+  debug_ctx=ctx;
+}
 
 int ctr_drbg_random_locked(void *p_rng, unsigned char *output, size_t output_len){
   ctr_drbg_context_locked *rng;
@@ -165,7 +184,12 @@ static void psync_set_ssl_error(ssl_connection_t *conn, int err){
   else{
     psync_ssl_errno=PSYNC_SSL_ERR_UNKNOWN;
     conn->isbroken=1;
-    debug(D_NOTICE, "got error %d ", err);
+    if (err==POLARSSL_ERR_NET_RECV_FAILED)
+      debug(D_NOTICE, "got POLARSSL_ERR_NET_RECV_FAILED");
+    else if (err==POLARSSL_ERR_NET_SEND_FAILED)
+      debug(D_NOTICE, "got POLARSSL_ERR_NET_SEND_FAILED");
+    else
+      debug(D_NOTICE, "got error %d", err);
   }
 }
 
@@ -197,7 +221,7 @@ static int psync_mbed_write(void *ptr, const unsigned char *buf, size_t len){
     if (err==P_WOULDBLOCK || err==P_AGAIN || err==P_INTR)
       return POLARSSL_ERR_NET_WANT_WRITE;
     else
-      return POLARSSL_ERR_NET_RECV_FAILED;
+      return POLARSSL_ERR_NET_SEND_FAILED;
   }
   else
     return (int)ret;
@@ -258,6 +282,7 @@ int psync_ssl_connect(psync_socket_t sock, void **sslconn, const char *hostname)
     goto err0;
   conn->sock=sock;
   ssl_set_endpoint(&conn->ssl, SSL_IS_CLIENT);
+  ssl_set_dbg(&conn->ssl, debug_cb, debug_ctx);
   ssl_set_authmode(&conn->ssl, SSL_VERIFY_REQUIRED);
   ssl_set_min_version(&conn->ssl, SSL_MAJOR_VERSION_3, SSL_MINOR_VERSION_3);
   ssl_set_ca_chain(&conn->ssl, &psync_mbed_trusted_certs_x509, NULL, hostname);
@@ -529,6 +554,27 @@ psync_symmetric_key_t psync_ssl_gen_symmetric_key_from_pass(const char *password
   return key;
 }
 
+char *psync_ssl_derive_password_from_passphrase(const char *username, const char *passphrase){
+  unsigned char *usercopy;
+  unsigned char usersha512[PSYNC_SHA512_DIGEST_LEN], passwordbin[32];
+  md_context_t ctx;
+  size_t userlen, i;
+  userlen=strlen(username);
+  usercopy=psync_new_cnt(unsigned char, userlen);
+  for (i=0; i<userlen; i++)
+    if ((unsigned char)username[i]<=127)
+      usercopy[i]=tolower((unsigned char)username[i]);
+    else
+      usercopy[i]='*';
+  psync_sha512(usercopy, userlen, usersha512);
+  psync_free(usercopy);
+  md_init_ctx(&ctx, md_info_from_type(POLARSSL_MD_SHA512));
+  pkcs5_pbkdf2_hmac(&ctx, (const unsigned char *)passphrase, strlen(passphrase), usersha512, PSYNC_SHA512_DIGEST_LEN, 5000, sizeof(passwordbin), passwordbin);
+  md_free_ctx(&ctx);
+  usercopy=psync_base64_encode(passwordbin, sizeof(passwordbin), &userlen);
+  return (char *)usercopy;
+}
+
 psync_encrypted_symmetric_key_t psync_ssl_rsa_encrypt_data(psync_rsa_publickey_t rsa, const unsigned char *data, size_t datalen){
   psync_encrypted_symmetric_key_t ret;
   int code;
@@ -539,7 +585,7 @@ psync_encrypted_symmetric_key_t psync_ssl_rsa_encrypt_data(psync_rsa_publickey_t
     return PSYNC_INVALID_ENC_SYM_KEY;
   }
   ret->datalen=rsa->len;
-  debug(D_NOTICE, "datalen=%lu", ret->datalen);
+  debug(D_NOTICE, "datalen=%lu", (unsigned long)ret->datalen);
   return ret;
 }
 
@@ -590,6 +636,24 @@ void psync_ssl_aes256_free_decoder(psync_aes256_encoder aes){
   psync_free(aes);
 }
 
+psync_rsa_signature_t psync_ssl_rsa_sign_sha256_hash(psync_rsa_privatekey_t rsa, const unsigned char *data){
+  psync_rsa_signature_t ret;
+  int padding, hash_id;
+  ret=(psync_rsa_signature_t)psync_malloc(offsetof(psync_symmetric_key_struct_t, key)+rsa->len);
+  if (!ret)
+    return (psync_rsa_signature_t)(void *)PERROR_NO_MEMORY;
+  ret->datalen=rsa->len;
+  padding=rsa->padding;
+  hash_id=rsa->hash_id;
+  rsa_set_padding(rsa, RSA_PKCS_V21, POLARSSL_MD_SHA256);
+  if (rsa_rsassa_pss_sign(rsa, ctr_drbg_random_locked, &psync_mbed_rng, RSA_PRIVATE, POLARSSL_MD_SHA256, PSYNC_SHA256_DIGEST_LEN, data, ret->data)){
+    free(ret);
+    rsa_set_padding(rsa, padding, hash_id);
+    return (psync_rsa_signature_t)(void *)PSYNC_CRYPTO_NOT_STARTED;
+  }
+  rsa_set_padding(rsa, padding, hash_id);
+  return ret;
+}
 
 #if defined(PSYNC_AES_HW_GCC)
 
@@ -716,7 +780,7 @@ SSE2FUNC void psync_aes256_decode_4blocks_consec_xor_hw(psync_aes256_decoder enc
       "xorps %%xmm0, %%xmm3\n"
       "movdqa 48(%1), %%xmm5\n"
       "pxor %%xmm0, %%xmm4\n"
-      "movdqa 16(%0), %%xmm1\n"
+      "movdqu 16(%0), %%xmm1\n"
       "pxor %%xmm0, %%xmm5\n"
       "1:\n"
       "lea 32(%0), %0\n"
